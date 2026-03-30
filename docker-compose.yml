@@ -1,0 +1,49 @@
+services:
+  investment-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: investment-agent
+    restart: unless-stopped
+
+    # Load all config from .env file (copy from .env.example and fill in)
+    env_file: .env
+
+    # Override specific vars for container paths
+    environment:
+      - DB_PATH=/app/data/portfolio.db
+      - UPLOADS_PATH=/app/uploads
+      - LOGS_PATH=/app/logs
+      - TZ=Asia/Kolkata
+
+    volumes:
+      # SQLite database — persists portfolio, briefs, goals
+      - ./data:/app/data
+
+      # Uploaded PDFs/CSVs
+      - ./uploads:/app/uploads
+
+      # Log files
+      - ./logs:/app/logs
+
+      # WhatsApp session (scan QR once, reused across restarts)
+      - ./.wwebjs_auth:/app/.wwebjs_auth
+      - ./.wwebjs_cache:/app/.wwebjs_cache
+
+    # Chrome needs shared memory > 64MB for WhatsApp web
+    shm_size: '256mb'
+
+    # Limit resource usage
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

@@ -5,11 +5,23 @@ const market     = require('../../sources/market');
 
 const r = Router();
 
-// GET /api/market/snapshot  — latest stored snapshot
-r.get('/snapshot', (_req, res) => {
-  const snap = market.getLatestSnapshot();
-  if (!snap) return res.status(404).json({ error: 'No snapshot yet. Run prices refresh first.' });
-  res.json(snap);
+// GET /api/market/snapshot  — latest stored snapshot (lazy fetch if missing/stale)
+r.get('/snapshot', async (_req, res) => {
+  try {
+    const today = market.getCurrentIstDate();
+    let snap = market.getLatestSnapshot();
+
+    // Lazy-load snapshot on first request, and refresh once per IST day.
+    if (!snap || snap.date !== today) {
+      await market.captureMarketSnapshot();
+      snap = market.getLatestSnapshot();
+    }
+
+    if (!snap) return res.status(404).json({ error: 'No snapshot available yet.' });
+    res.json(snap);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/market/snapshot/previous

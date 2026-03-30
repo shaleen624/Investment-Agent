@@ -12,6 +12,28 @@ const yahoo        = require('./yahoo');
 const nse          = require('./nse');
 const alphaVantage = require('./alpha-vantage');
 
+function getIstDateTimeParts(now = new Date()) {
+  const date = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+
+  const time = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(now);
+
+  return { date, time };
+}
+
+function getCurrentIstDate() {
+  return getIstDateTimeParts().date;
+}
+
 // ── Price fetching with fallback ───────────────────────────────────────────
 
 /**
@@ -113,8 +135,7 @@ async function updateAllPrices() {
 async function captureMarketSnapshot() {
   try {
     const indices = await yahoo.getMarketIndices();
-    const today   = new Date().toISOString().slice(0, 10);
-    const time    = new Date().toTimeString().slice(0, 5);
+    const { date: today, time } = getIstDateTimeParts();
     const firstUser = dbGet(`SELECT id FROM users ORDER BY id ASC LIMIT 1`);
 
     run(
@@ -188,6 +209,7 @@ module.exports = {
   captureMarketSnapshot,
   getLatestSnapshot,
   getPreviousDaySnapshot,
+  getCurrentIstDate,
   // Re-export raw sources for direct use
   yahoo,
   nse,

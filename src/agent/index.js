@@ -133,15 +133,26 @@ async function start() {
     });
   }
 
-  // 6. Warm up — fetch market snapshot in background
-  setImmediate(async () => {
-    try {
-      await market.captureMarketSnapshot();
-      logger.info('[Agent] Initial market snapshot captured');
-    } catch (e) {
-      logger.debug(`[Agent] Market warmup: ${e.message}`);
-    }
-  });
+  // 6. Warm up market snapshot only in production, once per IST day.
+  if (process.env.NODE_ENV === 'production') {
+    setImmediate(async () => {
+      try {
+        const today = market.getCurrentIstDate();
+        const latest = market.getLatestSnapshot();
+        if (latest?.date === today) {
+          logger.info('[Agent] Market warmup skipped (today snapshot already exists)');
+          return;
+        }
+
+        await market.captureMarketSnapshot();
+        logger.info('[Agent] Initial market snapshot captured');
+      } catch (e) {
+        logger.debug(`[Agent] Market warmup: ${e.message}`);
+      }
+    });
+  } else {
+    logger.info('[Agent] Market warmup skipped (non-production environment)');
+  }
 
   logger.info('=== Investment Agent Running ===');
   logNextBriefTimes();

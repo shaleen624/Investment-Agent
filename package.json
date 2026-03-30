@@ -18,6 +18,7 @@
     "status": "node index.js status",
     "notify:test": "node index.js notify test",
     "test:endpoints": "node scripts/smoke-endpoints.js",
+    "db:backfill:market-ist": "node scripts/backfill-market-snapshots-ist.js --apply",
     "install:all": "npm install && npm install --prefix pwa",
     "rebuild": "PUPPETEER_SKIP_DOWNLOAD=true npm rebuild"
   },

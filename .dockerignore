@@ -1,0 +1,20 @@
+# Dependencies (reinstalled in Docker)
+node_modules/
+
+# Secrets and local config
+.env
+
+# Runtime data (volume-mounted)
+data/
+logs/
+uploads/
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Dev files
+*.log
+.git/
+.gitignore
+
+# Docs
+README.md

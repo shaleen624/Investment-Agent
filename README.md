@@ -200,11 +200,50 @@ investment-agent/
 
 ---
 
-## Deployment (VPS)
+## Deployment
+
+### Docker (recommended)
+
+```bash
+# 1. Configure
+cp .env.example .env
+# Edit .env with your API keys
+
+# 2. Build and start
+docker compose up -d
+
+# 3. View logs
+docker compose logs -f
+
+# 4. Run CLI commands inside the container
+docker compose exec investment-agent node index.js portfolio
+docker compose exec investment-agent node index.js goals
+docker compose exec investment-agent node index.js brief morning
+docker compose exec investment-agent node index.js status
+```
+
+**WhatsApp QR code (first run):**
+```bash
+# Attach to see the QR code in terminal
+docker compose logs -f
+# Scan with WhatsApp → Linked Devices → Link a Device
+# Session is saved in .wwebjs_auth/ — no re-scan needed on restart
+```
+
+**Volumes created automatically:**
+| Path | Contents |
+|------|---------|
+| `./data/` | SQLite database (portfolio, briefs, goals) |
+| `./logs/` | Agent and error logs |
+| `./uploads/` | PDF/CSV files for import |
+| `./.wwebjs_auth/` | WhatsApp session (persist across restarts) |
+
+### VPS without Docker
 
 ```bash
 # Using PM2 for process management
 npm install -g pm2
+PUPPETEER_SKIP_DOWNLOAD=true npm install
 pm2 start index.js --name investment-agent
 pm2 save
 pm2 startup
@@ -223,6 +262,7 @@ ExecStart=/usr/bin/node index.js
 Restart=always
 User=ubuntu
 Environment=NODE_ENV=production
+Environment=PUPPETEER_SKIP_DOWNLOAD=true
 
 [Install]
 WantedBy=multi-user.target

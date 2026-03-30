@@ -12,12 +12,16 @@ const logger = require('../../config/logger');
 let yf = null;
 let _yfReady = false;
 
-// yahoo-finance2 v2.14+ is ESM-only; use dynamic import
+// yahoo-finance2 v2.14+ is ESM-only and exports a class; instantiate it
 async function getYF() {
   if (yf) return yf;
   try {
     const mod = await import('yahoo-finance2');
-    yf = mod.default;
+    const YahooFinance = mod.default;
+    // v2.14+ exports a class — instantiate it
+    yf = typeof YahooFinance === 'function' && YahooFinance.prototype?.quote
+      ? new YahooFinance()
+      : YahooFinance;
     _yfReady = true;
     return yf;
   } catch (err) {

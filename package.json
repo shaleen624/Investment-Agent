@@ -4,7 +4,10 @@
   "description": "AI-powered portfolio analysis agent for Indian markets",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "concurrently -n agent,pwa -c cyan,magenta \"node index.js\" \"npm start --prefix pwa\"",
+    "start:agent": "node index.js",
+    "start:pwa": "npm start --prefix pwa",
+    "dev": "concurrently -n agent,pwa -c cyan,magenta \"node --watch index.js\" \"npm start --prefix pwa\"",
     "setup": "node index.js setup",
     "portfolio": "node index.js portfolio",
     "goals": "node index.js goals",
@@ -13,7 +16,7 @@
     "analyze": "node index.js analyze",
     "status": "node index.js status",
     "notify:test": "node index.js notify test",
-    "dev": "node --watch index.js"
+    "install:all": "npm install && npm install --prefix pwa"
   },
   "config": {
     "puppeteer_skip_chromium_download": "true"
@@ -50,6 +53,9 @@
     "NSE",
     "BSE"
   ],
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
   "engines": {
     "node": ">=18.0.0"
   }

@@ -40,7 +40,9 @@ function getList(key, defaultValue = []) {
 const config = {
   // ── LLM ───────────────────────────────────────────────────────────────────
   llm: {
-    provider:   get('LLM_PROVIDER', 'claude'),   // "claude" | "openai" | "none"
+    // "claude" | "openai" | "kimi" | "deepseek" | "none"
+    provider: get('LLM_PROVIDER', 'claude'),
+
     claude: {
       apiKey: get('ANTHROPIC_API_KEY'),
       model:  get('CLAUDE_MODEL', 'claude-sonnet-4-6'),
@@ -48,6 +50,15 @@ const config = {
     openai: {
       apiKey: get('OPENAI_API_KEY'),
       model:  get('OPENAI_MODEL', 'gpt-4o'),
+    },
+
+    // NVIDIA NIM — hosts Kimi K2 and DeepSeek V3 (single key for both)
+    nvidia: {
+      apiKey:         get('NVIDIA_API_KEY'),
+      kimiModel:      get('KIMI_MODEL',     'moonshotai/kimi-k2.5'),
+      deepseekModel:  get('DEEPSEEK_MODEL', 'deepseek-ai/deepseek-v3.2'),
+      // DeepSeek extended thinking (chain-of-thought). Disable to reduce latency.
+      deepseekThinking: getBool('DEEPSEEK_THINKING', true),
     },
   },
 
@@ -154,6 +165,9 @@ function validate() {
   }
   if (config.llm.provider === 'openai' && !config.llm.openai.apiKey) {
     warnings.push('OPENAI_API_KEY not set — LLM features disabled');
+  }
+  if (['kimi', 'deepseek'].includes(config.llm.provider) && !config.llm.nvidia.apiKey) {
+    warnings.push(`NVIDIA_API_KEY not set — ${config.llm.provider} provider disabled`);
   }
   if (!config.market.alphaVantage.enabled) {
     warnings.push('ALPHA_VANTAGE_API_KEY not set — some market data unavailable');

@@ -5,12 +5,13 @@ import { provideAnimationsAsync }                 from '@angular/platform-browse
 import { provideServiceWorker }                   from '@angular/service-worker';
 import { routes }                                 from './app.routes';
 import { errorInterceptor }                       from './core/interceptors/error.interceptor';
+import { authInterceptor }                        from './core/interceptors/auth.interceptor';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes, withComponentInputBinding(), withViewTransitions()),
-    provideHttpClient(withInterceptors([errorInterceptor])),
+    provideHttpClient(withInterceptors([errorInterceptor, authInterceptor])),
     provideAnimationsAsync(),
     provideServiceWorker('ngsw-worker.js', {
       enabled: !isDevMode(),

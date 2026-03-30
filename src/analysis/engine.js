@@ -81,7 +81,7 @@ async function scoreNews() {
  * Generate a morning brief.
  * @returns {{ content: string, briefId: number }}
  */
-async function generateMorningBrief() {
+async function generateMorningBrief(userId = null) {
   logger.info('[Analysis] Generating morning brief...');
 
   // 1. Refresh market data
@@ -91,14 +91,14 @@ async function generateMorningBrief() {
   ]);
 
   // 2. Fetch fresh news
-  const holdings  = portfolio.getAllHoldings();
+  const holdings  = userId ? portfolio.getAllHoldings(userId) : portfolio.getAllHoldings();
   const symbols   = holdings.map(h => h.symbol).filter(Boolean);
   await news.fetchAndCache(symbols);
   await scoreNews();
 
   // 3. Build context
-  const portfolioSummary = portfolio.getPortfolioSummary();
-  const goals            = portfolio.getGoals();
+  const portfolioSummary = userId ? portfolio.getPortfolioSummary(userId) : portfolio.getPortfolioSummary();
+  const goals            = userId ? portfolio.getGoals(userId) : portfolio.getGoals();
   const topNews          = news.getTopNews(20, 12);
   const snapshot         = market.getLatestSnapshot();
 
@@ -129,14 +129,14 @@ async function generateMorningBrief() {
   try {
     const content = await llm.chat(prompt, { maxTokens: 3000 });
     const summary = content.slice(0, 800); // first ~800 chars as summary
-    const briefId = saveBrief('morning', content, summary, snapshot);
+    const briefId = saveBrief('morning', content, summary, snapshot, userId);
 
     logger.info('[Analysis] Morning brief generated');
     return { content, briefId };
   } catch (err) {
     logger.error(`[Analysis] Morning brief LLM failed: ${err.message}`);
     const fallback = generateFallbackMorningBrief(portfolioSummary, snapshot, topNews, goals);
-    const briefId  = saveBrief('morning', fallback, null, snapshot);
+    const briefId  = saveBrief('morning', fallback, null, snapshot, userId);
     return { content: fallback, briefId };
   }
 }
@@ -145,7 +145,7 @@ async function generateMorningBrief() {
  * Generate an evening brief.
  * @returns {{ content: string, briefId: number }}
  */
-async function generateEveningBrief() {
+async function generateEveningBrief(userId = null) {
   logger.info('[Analysis] Generating evening brief...');
 
   // 1. Refresh market data (closing prices)
@@ -155,14 +155,14 @@ async function generateEveningBrief() {
   ]);
 
   // 2. Fetch day's news
-  const holdings  = portfolio.getAllHoldings();
+  const holdings  = userId ? portfolio.getAllHoldings(userId) : portfolio.getAllHoldings();
   const symbols   = holdings.map(h => h.symbol).filter(Boolean);
   await news.fetchAndCache(symbols);
   await scoreNews();
 
   // 3. Build context
-  const portfolioSummary = portfolio.getPortfolioSummary();
-  const goals            = portfolio.getGoals();
+  const portfolioSummary = userId ? portfolio.getPortfolioSummary(userId) : portfolio.getPortfolioSummary();
+  const goals            = userId ? portfolio.getGoals(userId) : portfolio.getGoals();
   const topNews          = news.getTopNews(25, 24);
   const snapshot         = market.getLatestSnapshot();
 
@@ -175,7 +175,7 @@ async function generateEveningBrief() {
 
   if (!llm.isAvailable()) {
     const fallback = generateFallbackEveningBrief(portfolioSummary, snapshot, topNews, goals);
-    const briefId  = saveBrief('evening', fallback, null, snapshot);
+    const briefId  = saveBrief('evening', fallback, null, snapshot, userId);
     return { content: fallback, briefId };
   }
 
@@ -190,7 +190,7 @@ async function generateEveningBrief() {
   try {
     const content = await llm.chat(prompt, { maxTokens: 3500 });
     const summary = content.slice(0, 800);
-    const briefId = saveBrief('evening', content, summary, snapshot);
+    const briefId = saveBrief('evening', content, summary, snapshot, userId);
 
     // Extract and save recommendations from brief
     await extractAndSaveRecommendations(content, briefId);
@@ -227,7 +227,7 @@ async function analyzePortfolio() {
 
 // ── Persistence helpers ───────────────────────────────────────────────────────
 
-function saveBrief(type, content, summary, snapshot = null) {
+function saveBrief(type, content, summary, snapshot = null, userId = null) {
   const today = new Date().toISOString().slice(0, 10);
   const marketSnap = snapshot ? {
     nifty50: snapshot.nifty50,
@@ -236,9 +236,16 @@ function saveBrief(type, content, summary, snapshot = null) {
   } : {};
 
   const result = run(
-    `INSERT INTO briefs (type, date, content, summary, market_snapshot)
-     VALUES (?, ?, ?, ?, ?)`,
-    [type, today, content, summary || null, JSON.stringify(marketSnap)]
+    `INSERT INTO briefs (user_id, type, date, content, summary, market_snapshot)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      userId,
+      type,
+      today,
+      content,
+      summary || null,
+      JSON.stringify(marketSnap),
+    ]
   );
   return result.lastInsertRowid;
 }
@@ -250,7 +257,13 @@ function markBriefSent(briefId, channels) {
   );
 }
 
-function getLatestBrief(type) {
+function getLatestBrief(type, userId = null) {
+  if (userId) {
+    return dbGet(
+      `SELECT * FROM briefs WHERE user_id = ? AND type = ? ORDER BY date DESC, created_at DESC LIMIT 1`,
+      [userId, type]
+    );
+  }
   return dbGet(
     `SELECT * FROM briefs WHERE type = ? ORDER BY date DESC, created_at DESC LIMIT 1`,
     [type]
@@ -263,10 +276,10 @@ function getLatestBrief(type) {
  * Parse the LLM brief to extract specific buy/sell/hold recommendations
  * and save them to the recommendations table.
  */
-async function extractAndSaveRecommendations(briefContent, briefId) {
+async function extractAndSaveRecommendations(briefContent, briefId, userId = null) {
   if (!llm.isAvailable()) return;
 
-  const holdings = portfolio.getAllHoldings();
+  const holdings = userId ? portfolio.getAllHoldings(userId) : portfolio.getAllHoldings();
   const symbolsStr = holdings.map(h => h.symbol || h.name).filter(Boolean).join(', ');
 
   const extractPrompt = {
@@ -304,10 +317,11 @@ Return a JSON array. Return [] if no specific recommendations found.`,
 
       run(
         `INSERT INTO recommendations
-           (holding_id, symbol, name, action, rationale, confidence, time_horizon,
+           (user_id, holding_id, symbol, name, action, rationale, confidence, time_horizon,
             target_price, stop_loss, brief_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
+          userId,
           holding?.id || null,
           r.symbol,
           r.name || r.symbol,

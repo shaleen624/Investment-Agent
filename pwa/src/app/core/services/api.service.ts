@@ -11,6 +11,19 @@ export class ApiService {
   private http = inject(HttpClient);
   private base = '/api';
 
+  // ── Authentication ────────────────────────────────────────────────────────
+  login(username: string, password: string): Observable<{ token: string; user: any }> {
+    return this.http.post<any>(`${this.base}/auth/login`, { username, password });
+  }
+
+  register(username: string, password: string): Observable<{ token: string; user: any }> {
+    return this.http.post<any>(`${this.base}/auth/register`, { username, password });
+  }
+
+  logout(): Observable<void> {
+    return this.http.post<void>(`${this.base}/auth/logout`, {});
+  }
+
   // ── Status ────────────────────────────────────────────────────────────────
   status(): Observable<AgentStatus> {
     return this.http.get<AgentStatus>(`${this.base}/status`);

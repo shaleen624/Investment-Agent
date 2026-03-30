@@ -21,6 +21,7 @@ const marketRoutes        = require('./routes/market');
 const newsRoutes          = require('./routes/news');
 const notificationsRoutes = require('./routes/notifications');
 const statusRoutes        = require('./routes/status');
+const authRoutes          = require('./routes/auth');
 
 const app  = express();
 const PORT = parseInt(process.env.API_PORT || '3000', 10);
@@ -48,6 +49,7 @@ app.use((req, _res, next) => {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
+app.use('/api/auth',          authRoutes);
 app.use('/api/status',        statusRoutes);
 app.use('/api/portfolio',     portfolioRoutes);
 app.use('/api/goals',         goalsRoutes);

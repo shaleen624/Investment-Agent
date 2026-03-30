@@ -6,23 +6,36 @@
  */
 
 const SCHEMA = `
--- ── Users / Profile ─────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS user_profile (
-  id            INTEGER PRIMARY KEY CHECK (id = 1),  -- singleton row
+-- ── Users ───────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT    NOT NULL UNIQUE,
+  email         TEXT          UNIQUE,
+  password_hash TEXT    NOT NULL,
   name          TEXT    NOT NULL DEFAULT 'Investor',
-  email         TEXT,
   telegram_id   TEXT,
   whatsapp      TEXT,
   timezone      TEXT    NOT NULL DEFAULT 'Asia/Kolkata',
   morning_time  TEXT    NOT NULL DEFAULT '08:00',
   evening_time  TEXT    NOT NULL DEFAULT '20:00',
+  is_active     INTEGER NOT NULL DEFAULT 1,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ── User Sessions ───────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token         TEXT    NOT NULL UNIQUE,
+  expires_at    TEXT    NOT NULL,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 -- ── Investment Goals ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS goals (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   type            TEXT    NOT NULL CHECK (type IN ('short_term','long_term')),
   title           TEXT    NOT NULL,
   description     TEXT,
@@ -39,6 +52,7 @@ CREATE TABLE IF NOT EXISTS goals (
 -- ── Holdings ─────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS holdings (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   asset_type      TEXT    NOT NULL
                     CHECK (asset_type IN (
                       'equity','mutual_fund','etf','bond',
@@ -68,6 +82,7 @@ CREATE TABLE IF NOT EXISTS holdings (
 -- ── Transaction History ──────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS transactions (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   holding_id      INTEGER REFERENCES holdings(id) ON DELETE CASCADE,
   type            TEXT    NOT NULL CHECK (type IN ('buy','sell','dividend','sip','redemption')),
   quantity        REAL    NOT NULL,
@@ -82,6 +97,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 -- ── Daily Briefs ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS briefs (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   type            TEXT    NOT NULL CHECK (type IN ('morning','evening')),
   date            TEXT    NOT NULL,   -- YYYY-MM-DD
   content         TEXT    NOT NULL,   -- full brief text (markdown)
@@ -94,6 +110,7 @@ CREATE TABLE IF NOT EXISTS briefs (
 -- ── Market Snapshots ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS market_snapshots (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   date            TEXT    NOT NULL,
   time            TEXT    NOT NULL,
   nifty50         REAL,
@@ -128,6 +145,7 @@ CREATE TABLE IF NOT EXISTS news_cache (
 -- ── Recommendations ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS recommendations (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   holding_id      INTEGER REFERENCES holdings(id) ON DELETE SET NULL,
   symbol          TEXT,
   name            TEXT,

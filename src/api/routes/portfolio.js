@@ -6,6 +6,7 @@ const parser = require('../../portfolio/parser');
 const path   = require('path');
 const fs     = require('fs');
 const multer = require('multer');
+const { authenticateToken } = require('../middleware/auth');
 
 const r = Router();
 
@@ -20,31 +21,31 @@ const upload = multer({
 });
 
 // GET /api/portfolio/summary
-r.get('/summary', (_req, res) => {
-  const summary = pm.getPortfolioSummary();
-  const xirr    = pm.calculateXIRR();
+r.get('/summary', authenticateToken, (req, res) => {
+  const summary = pm.getPortfolioSummary(req.user.id);
+  const xirr    = pm.calculateXIRR(req.user.id);
   res.json({ ...summary, xirr });
 });
 
 // GET /api/portfolio/holdings
-r.get('/holdings', (_req, res) => {
-  const { type } = _req.query;
-  const holdings = type ? pm.getHoldingsByType(type) : pm.getAllHoldings();
+r.get('/holdings', authenticateToken, (req, res) => {
+  const { type } = req.query;
+  const holdings = type ? pm.getHoldingsByType(type, req.user.id) : pm.getAllHoldings(req.user.id);
   res.json(holdings);
 });
 
 // GET /api/portfolio/holdings/:id
-r.get('/holdings/:id', (req, res) => {
-  const h = pm.getHolding(parseInt(req.params.id));
+r.get('/holdings/:id', authenticateToken, (req, res) => {
+  const h = pm.getHolding(parseInt(req.params.id), req.user.id);
   if (!h) return res.status(404).json({ error: 'Not found' });
-  const txns = pm.getTransactions(h.id);
+  const txns = pm.getTransactions(h.id, req.user.id);
   res.json({ ...h, transactions: txns });
 });
 
 // POST /api/portfolio/holdings
-r.post('/holdings', (req, res) => {
+r.post('/holdings', authenticateToken, (req, res) => {
   try {
-    const id = pm.upsertHolding(req.body);
+    const id = pm.upsertHolding({ ...req.body, user_id: req.user.id });
     res.status(201).json({ id, ...req.body });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -52,37 +53,41 @@ r.post('/holdings', (req, res) => {
 });
 
 // PUT /api/portfolio/holdings/:id
-r.put('/holdings/:id', (req, res) => {
+r.put('/holdings/:id', authenticateToken, (req, res) => {
   const id = parseInt(req.params.id);
-  const existing = pm.getHolding(id);
+  const existing = pm.getHolding(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  pm.upsertHolding({ ...existing, ...req.body, id });
+  pm.upsertHolding({ ...existing, ...req.body, id, user_id: req.user.id });
   res.json({ id, ...req.body });
 });
 
 // DELETE /api/portfolio/holdings/:id
-r.delete('/holdings/:id', (req, res) => {
-  pm.deleteHolding(parseInt(req.params.id));
+r.delete('/holdings/:id', authenticateToken, (req, res) => {
+  const id = parseInt(req.params.id);
+  const existing = pm.getHolding(id, req.user.id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  pm.deleteHolding(id, req.user.id);
   res.json({ deleted: true });
 });
 
 // POST /api/portfolio/import  (text)
-r.post('/import/text', async (req, res) => {
+r.post('/import/text', authenticateToken, async (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: 'text is required' });
-  const holdings = parser.parseText(text);
+  const holdings = parser.parseText(text).map(h => ({ ...h, user_id: req.user.id }));
   const result   = pm.upsertHoldings(holdings);
   res.json({ parsed: holdings.length, ...result, holdings });
 });
 
 // POST /api/portfolio/import/file  (PDF/CSV upload)
-r.post('/import/file', upload.single('file'), async (req, res) => {
+r.post('/import/file', authenticateToken, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   try {
     const holdings = await parser.parseFile(req.file.path);
-    const result   = pm.upsertHoldings(holdings);
+    const userHoldings = holdings.map(h => ({ ...h, user_id: req.user.id }));
+    const result   = pm.upsertHoldings(userHoldings);
     fs.unlink(req.file.path, () => {});
-    res.json({ parsed: holdings.length, ...result, holdings });
+    res.json({ parsed: holdings.length, ...result, holdings: userHoldings });
   } catch (err) {
     fs.unlink(req.file.path, () => {});
     res.status(422).json({ error: err.message });
@@ -96,7 +101,7 @@ r.post('/prices/refresh', async (_req, res) => {
 });
 
 // POST /api/portfolio/sync/:broker
-r.post('/sync/:broker', async (req, res) => {
+r.post('/sync/:broker', authenticateToken, async (req, res) => {
   const broker = req.params.broker;
   try {
     let holdings = [];
@@ -110,7 +115,8 @@ r.post('/sync/:broker', async (req, res) => {
     } else {
       return res.status(400).json({ error: `Unknown broker: ${broker}` });
     }
-    const result = pm.upsertHoldings(holdings);
+    const userHoldings = holdings.map(h => ({ ...h, user_id: req.user.id }));
+    const result = pm.upsertHoldings(userHoldings);
     res.json({ synced: holdings.length, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });

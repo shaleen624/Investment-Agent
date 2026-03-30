@@ -16,16 +16,24 @@ const { run, get: dbGet, all: dbAll } = require('../db');
  * @returns {number} holding id
  */
 function upsertHolding(holding) {
+  if (!holding.user_id) {
+    throw new Error('user_id is required for holding operations');
+  }
+
+  const userId = holding.user_id;
+  const broker = holding.broker || 'manual';
+  const assetType = holding.asset_type || 'equity';
+
   const existing = holding.symbol
     ? dbGet(
         `SELECT id FROM holdings
-         WHERE symbol = ? AND broker = ? AND asset_type = ?`,
-        [holding.symbol, holding.broker || 'manual', holding.asset_type]
+         WHERE user_id = ? AND symbol = ? AND broker = ? AND asset_type = ?`,
+        [userId, holding.symbol, broker, assetType]
       )
     : dbGet(
         `SELECT id FROM holdings
-         WHERE name = ? AND broker = ? AND asset_type = ?`,
-        [holding.name, holding.broker || 'manual', holding.asset_type]
+         WHERE user_id = ? AND name = ? AND broker = ? AND asset_type = ?`,
+        [userId, holding.name, broker, assetType]
       );
 
   const investedAmount = holding.invested_amount ||
@@ -36,18 +44,18 @@ function upsertHolding(holding) {
   if (existing) {
     run(
       `UPDATE holdings SET
-         quantity        = ?,
-         avg_buy_price   = ?,
-         invested_amount = ?,
-         current_price   = COALESCE(?, current_price),
-         current_value   = COALESCE(?, current_value),
-         unrealized_pnl  = COALESCE(?, unrealized_pnl),
-         pnl_percent     = COALESCE(?, pnl_percent),
-         units           = COALESCE(?, units),
-         nav             = COALESCE(?, nav),
-         folio_number    = COALESCE(?, folio_number),
-         last_updated    = datetime('now')
-       WHERE id = ?`,
+         quantity         = ?,
+         avg_buy_price    = ?,
+         invested_amount  = ?,
+         current_price    = COALESCE(?, current_price),
+         current_value    = COALESCE(?, current_value),
+         unrealized_pnl   = COALESCE(?, unrealized_pnl),
+         pnl_percent      = COALESCE(?, pnl_percent),
+         units            = COALESCE(?, units),
+         nav              = COALESCE(?, nav),
+         folio_number     = COALESCE(?, folio_number),
+         last_updated     = datetime('now')
+       WHERE id = ? AND user_id = ?`,
       [
         holding.quantity,
         holding.avg_buy_price,
@@ -60,6 +68,7 @@ function upsertHolding(holding) {
         holding.nav             || null,
         holding.folio_number    || null,
         existing.id,
+        userId,
       ]
     );
     logger.debug(`[Portfolio] Updated holding: ${holding.symbol || holding.name}`);
@@ -67,12 +76,13 @@ function upsertHolding(holding) {
   } else {
     const result = run(
       `INSERT INTO holdings
-         (asset_type, symbol, name, exchange, quantity, avg_buy_price,
+         (user_id, asset_type, symbol, name, exchange, quantity, avg_buy_price,
           current_price, current_value, invested_amount, unrealized_pnl, pnl_percent,
           sector, broker, folio_number, units, nav, maturity_date, interest_rate)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        holding.asset_type     || 'equity',
+        userId,
+        assetType,
         holding.symbol         || null,
         holding.name,
         holding.exchange       || 'NSE',
@@ -84,7 +94,7 @@ function upsertHolding(holding) {
         holding.unrealized_pnl || null,
         holding.pnl_percent    || null,
         holding.sector         || null,
-        holding.broker         || 'manual',
+        broker,
         holding.folio_number   || null,
         holding.units          || null,
         holding.nav            || null,
@@ -115,33 +125,55 @@ function upsertHoldings(holdings) {
   return results;
 }
 
-/** Get all holdings. */
-function getAllHoldings() {
+/** Get all holdings for a user. */
+function getAllHoldings(userId) {
+  if (userId) {
+    return dbAll(
+      `SELECT * FROM holdings WHERE user_id = ? ORDER BY asset_type, name`,
+      [userId]
+    );
+  }
   return dbAll(`SELECT * FROM holdings ORDER BY asset_type, name`);
 }
 
-/** Get holdings by asset type. */
-function getHoldingsByType(assetType) {
+/** Get holdings by asset type for a user. */
+function getHoldingsByType(assetType, userId) {
+  if (userId) {
+    return dbAll(
+      `SELECT * FROM holdings WHERE user_id = ? AND asset_type = ? ORDER BY name`,
+      [userId, assetType]
+    );
+  }
   return dbAll(`SELECT * FROM holdings WHERE asset_type = ? ORDER BY name`, [assetType]);
 }
 
-/** Get a single holding by id. */
-function getHolding(id) {
+/** Get a single holding by id for a user. */
+function getHolding(id, userId) {
+  if (userId) {
+    return dbGet(`SELECT * FROM holdings WHERE id = ? AND user_id = ?`, [id, userId]);
+  }
   return dbGet(`SELECT * FROM holdings WHERE id = ?`, [id]);
 }
 
-/** Delete a holding. */
-function deleteHolding(id) {
-  run(`DELETE FROM holdings WHERE id = ?`, [id]);
+/** Delete a holding for a user. */
+function deleteHolding(id, userId) {
+  if (userId) {
+    return run(`DELETE FROM holdings WHERE id = ? AND user_id = ?`, [id, userId]);
+  }
+  return run(`DELETE FROM holdings WHERE id = ?`, [id]);
 }
 
 // ── Transactions ──────────────────────────────────────────────────────────────
 
 function addTransaction(tx) {
+  if (!tx.user_id) {
+    throw new Error('user_id is required for transaction operations');
+  }
   return run(
-    `INSERT INTO transactions (holding_id, type, quantity, price, amount, fees, date, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO transactions (user_id, holding_id, type, quantity, price, amount, fees, date, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
+      tx.user_id,
       tx.holding_id || null,
       tx.type,
       tx.quantity,
@@ -154,7 +186,16 @@ function addTransaction(tx) {
   ).lastInsertRowid;
 }
 
-function getTransactions(holdingId = null) {
+function getTransactions(holdingId = null, userId = null) {
+  if (holdingId && userId) {
+    return dbAll(
+      `SELECT * FROM transactions WHERE holding_id = ? AND user_id = ? ORDER BY date DESC`,
+      [holdingId, userId]
+    );
+  }
+  if (userId) {
+    return dbAll(`SELECT * FROM transactions WHERE user_id = ? ORDER BY date DESC`, [userId]);
+  }
   if (holdingId) {
     return dbAll(`SELECT * FROM transactions WHERE holding_id = ? ORDER BY date DESC`, [holdingId]);
   }
@@ -164,6 +205,10 @@ function getTransactions(holdingId = null) {
 // ── Goals ─────────────────────────────────────────────────────────────────────
 
 function upsertGoal(goal) {
+  if (!goal.user_id) {
+    throw new Error('user_id is required for goal operations');
+  }
+
   if (goal.id) {
     run(
       `UPDATE goals SET
@@ -176,7 +221,7 @@ function upsertGoal(goal) {
          priority       = ?,
          is_active      = ?,
          updated_at     = datetime('now')
-       WHERE id = ?`,
+       WHERE id = ? AND user_id = ?`,
       [
         goal.type,
         goal.title,
@@ -187,14 +232,16 @@ function upsertGoal(goal) {
         goal.priority       || 5,
         goal.is_active !== undefined ? (goal.is_active ? 1 : 0) : 1,
         goal.id,
+        goal.user_id,
       ]
     );
     return goal.id;
   } else {
     return run(
-      `INSERT INTO goals (type, title, description, target_amount, target_date, risk_tolerance, priority)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO goals (user_id, type, title, description, target_amount, target_date, risk_tolerance, priority)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        goal.user_id,
         goal.type,
         goal.title,
         goal.description || null,
@@ -207,15 +254,28 @@ function upsertGoal(goal) {
   }
 }
 
-function getGoals(activeOnly = true) {
+function getGoals(userId = null, activeOnly = true) {
+  if (userId) {
+    if (activeOnly) {
+      return dbAll(
+        `SELECT * FROM goals WHERE user_id = ? AND is_active = 1 ORDER BY priority, type`,
+        [userId]
+      );
+    }
+    return dbAll(`SELECT * FROM goals WHERE user_id = ? ORDER BY priority, type`, [userId]);
+  }
+
   if (activeOnly) {
     return dbAll(`SELECT * FROM goals WHERE is_active = 1 ORDER BY priority, type`);
   }
   return dbAll(`SELECT * FROM goals ORDER BY priority, type`);
 }
 
-function deleteGoal(id) {
-  run(`UPDATE goals SET is_active = 0 WHERE id = ?`, [id]);
+function deleteGoal(id, userId) {
+  if (!userId) {
+    throw new Error('user_id is required for goal deletion');
+  }
+  run(`UPDATE goals SET is_active = 0 WHERE id = ? AND user_id = ?`, [id, userId]);
 }
 
 // ── User Profile ──────────────────────────────────────────────────────────────
@@ -270,8 +330,8 @@ function upsertProfile(profile) {
 /**
  * Compute portfolio summary: total invested, current value, P&L, allocation.
  */
-function getPortfolioSummary() {
-  const holdings = getAllHoldings();
+function getPortfolioSummary(userId = null) {
+  const holdings = userId ? getAllHoldings(userId) : dbAll(`SELECT * FROM holdings ORDER BY asset_type, name`);
   if (!holdings.length) return null;
 
   let totalInvested = 0;
@@ -319,14 +379,22 @@ function getPortfolioSummary() {
  * Calculate XIRR for equity holdings using transaction history.
  * Falls back to simple CAGR if XIRR package fails.
  */
-function calculateXIRR() {
+function calculateXIRR(userId = null) {
   try {
     const xirr = require('xirr');
-    const transactions = dbAll(
-      `SELECT t.amount, t.type, t.date
-       FROM transactions t
-       ORDER BY t.date ASC`
-    );
+    const transactions = userId
+      ? dbAll(
+          `SELECT t.amount, t.type, t.date
+           FROM transactions t
+           WHERE t.user_id = ?
+           ORDER BY t.date ASC`,
+          [userId]
+        )
+      : dbAll(
+          `SELECT t.amount, t.type, t.date
+           FROM transactions t
+           ORDER BY t.date ASC`
+        );
 
     if (transactions.length < 2) return null;
 

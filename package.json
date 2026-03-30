@@ -25,12 +25,14 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
     "axios": "^1.7.9",
+    "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.8.1",
     "chalk": "^4.1.2",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
     "inquirer": "^8.2.6",
+    "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
@@ -43,6 +45,7 @@
     "whatsapp-web.js": "^1.26.0",
     "winston": "^3.17.0",
     "xirr": "^1.0.4",
+    "xlsx": "^0.18.5",
     "yahoo-finance2": "^2.13.3"
   },
   "keywords": [

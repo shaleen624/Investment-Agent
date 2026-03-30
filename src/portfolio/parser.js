@@ -11,9 +11,10 @@ const fs     = require('fs');
 const path   = require('path');
 const logger = require('../config/logger');
 
-let pdfParse, Papa;
+let pdfParse, Papa, XLSX;
 try { pdfParse = require('pdf-parse'); } catch { logger.warn('[Parser] pdf-parse not installed'); }
 try { Papa     = require('papaparse'); } catch { logger.warn('[Parser] papaparse not installed'); }
+try { XLSX     = require('xlsx'); } catch { logger.warn('[Parser] xlsx not installed'); }
 
 // ── Normalized holding schema ─────────────────────────────────────────────────
 //
@@ -31,7 +32,86 @@ try { Papa     = require('papaparse'); } catch { logger.warn('[Parser] papaparse
 //   broker:        'kite'|'groww'|'manual'
 // }
 
-// ── CSV Parser ────────────────────────────────────────────────────────────────
+// ── Excel Parser ──────────────────────────────────────────────────────────────
+
+/**
+ * Parse an Excel file (.xlsx) - converts to CSV-like format and uses generic parser.
+ */
+function parseExcel(filePath) {
+  if (!XLSX) throw new Error('xlsx not installed');
+  
+  const workbook = XLSX.readFile(filePath);
+  const sheetName = workbook.SheetNames[0]; // Use first sheet
+  const worksheet = workbook.Sheets[sheetName];
+  
+  // Convert to CSV-like array of objects
+  const csvData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+  if (!csvData.length) return [];
+  
+  // Convert array of arrays to array of objects (first row as headers)
+  const headers = csvData[0].map(h => h?.toString().toLowerCase() || '');
+  const data = csvData.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((header, index) => {
+      obj[header] = row[index]?.toString() || '';
+    });
+    return obj;
+  });
+  
+  // Create a mock Papa parse result
+  const mockPapaResult = {
+    data,
+    meta: { fields: headers.map(h => h.charAt(0).toUpperCase() + h.slice(1)) }
+  };
+  
+  // Use the generic CSV parser logic
+  return parseGenericCSVFromData(mockPapaResult);
+}
+
+/**
+ * Modified generic CSV parser that works with pre-parsed data.
+ */
+function parseGenericCSVFromData({ data, meta }) {
+  if (!data.length) return [];
+
+  const headers = (meta.fields || []).map(h => h.toLowerCase());
+  const col = name => meta.fields?.find(h => h.toLowerCase().includes(name)) || null;
+
+  const symbolCol   = col('symbol') || col('ticker') || col('scrip') || col('isin');
+  const nameCol     = col('name') || col('company') || col('instrument') || col('scheme');
+  const qtyCol      = col('quantity') || col('units') || col('shares') || col('qty');
+  const priceCol    = col('price') || col('avg') || col('nav') || col('cost');
+  const amtCol      = col('amount') || col('investment') || col('invested') || col('value');
+  const exchangeCol = col('exchange');
+  const typeCol     = col('type') || col('asset');
+
+  return data.map(row => {
+    const rawType = typeCol ? (row[typeCol] || '').toLowerCase() : '';
+    let asset_type = 'other';
+    if (rawType.includes('equity') || rawType.includes('stock')) asset_type = 'equity';
+    else if (rawType.includes('mutual') || rawType.includes('mf') || rawType.includes('fund')) asset_type = 'mutual_fund';
+    else if (rawType.includes('etf')) asset_type = 'etf';
+    else if (rawType.includes('bond')) asset_type = 'bond';
+    else if (rawType.includes('fd') || rawType.includes('fixed')) asset_type = 'fd';
+    else if (rawType.includes('nps')) asset_type = 'nps';
+    else if (rawType.includes('crypto')) asset_type = 'crypto';
+
+    const quantity = qtyCol ? parseFloat(row[qtyCol] || '0') : 0;
+    const avg_buy_price = priceCol ? parseFloat(row[priceCol] || '0') : 0;
+    const invested_amount = amtCol ? parseFloat(row[amtCol] || '0') : (quantity * avg_buy_price);
+
+    return {
+      asset_type,
+      symbol:        symbolCol ? row[symbolCol]?.trim() : null,
+      name:          nameCol ? row[nameCol]?.trim() : (symbolCol ? row[symbolCol]?.trim() : 'Unknown'),
+      exchange:      exchangeCol ? row[exchangeCol]?.trim() : 'NSE',
+      quantity,
+      avg_buy_price,
+      invested_amount,
+      broker:        'excel',
+    };
+  }).filter(h => h.quantity > 0 || h.invested_amount > 0);
+}
 
 /**
  * Parse a CSV file exported from Zerodha Kite (Holdings export).
@@ -291,6 +371,10 @@ async function parseFile(filePath) {
     return parsePDF(filePath);
   }
 
+  if (ext === '.xlsx' || ext === '.xls') {
+    return parseExcel(filePath);
+  }
+
   if (ext === '.csv') {
     // Detect format from header
     if (content.includes('Tradingsymbol') || content.includes('Average price')) return parseKiteCSV(content);
@@ -305,4 +389,4 @@ async function parseFile(filePath) {
   throw new Error(`Unsupported file type: ${ext}`);
 }
 
-module.exports = { parseFile, parseText, parseKiteCSV, parseGrowwCSV, parseGenericCSV, parsePDF };
+module.exports = { parseFile, parseText, parseKiteCSV, parseGrowwCSV, parseGenericCSV, parseExcel, parsePDF };

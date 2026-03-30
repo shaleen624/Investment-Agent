@@ -153,7 +153,7 @@ async function handlePortfolioImport(method) {
 
     const holdings = parseText(lines.join('\n'));
     if (holdings.length) {
-      pm.upsertHoldings(holdings);
+      await pm.upsertHoldingsResolved(holdings);
       console.log(chalk.green(`\n✓ ${holdings.length} holding(s) added\n`));
     } else {
       console.log(chalk.yellow('No holdings detected. Try the CSV import for better accuracy.\n'));
@@ -194,7 +194,7 @@ async function handlePortfolioImport(method) {
     }]);
 
     if (confirm) {
-      pm.upsertHoldings(holdings);
+      await pm.upsertHoldingsResolved(holdings);
       console.log(chalk.green(`\n✓ ${holdings.length} holding(s) imported\n`));
     }
   } catch (err) {

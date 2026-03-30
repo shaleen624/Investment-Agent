@@ -48,12 +48,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function yahooGet(path, params = {}, attempt = 1, hostIdx = 0) {
+async function yahooGet(path, params = {}, options = {}, attempt = 1, hostIdx = 0) {
   const host = YAHOO_HOSTS[hostIdx] || YAHOO_HOSTS[0];
+  const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
   try {
     const { data } = await axios.get(`https://${host}${path}`, {
       params,
-      timeout: DEFAULT_TIMEOUT_MS,
+      timeout,
       headers: {
         Accept: 'application/json',
         'User-Agent': 'Mozilla/5.0 Investment-Agent/0.1',
@@ -65,11 +66,11 @@ async function yahooGet(path, params = {}, attempt = 1, hostIdx = 0) {
     const retriable = status === 429 || status === 503 || status === 504;
     const dnsOrNetwork = !status;
     if ((retriable || dnsOrNetwork) && hostIdx < YAHOO_HOSTS.length - 1) {
-      return yahooGet(path, params, attempt, hostIdx + 1);
+      return yahooGet(path, params, options, attempt, hostIdx + 1);
     }
     if (retriable && attempt < 3) {
       await sleep(400 * attempt);
-      return yahooGet(path, params, attempt + 1, hostIdx);
+      return yahooGet(path, params, options, attempt + 1, hostIdx);
     }
     throw err;
   }
@@ -299,7 +300,7 @@ async function searchSymbol(query) {
       q: query,
       quotesCount: 10,
       newsCount: 0,
-    });
+    }, { timeout: 2000 });
     return (data?.quotes || []).slice(0, 10).map(r => ({
       symbol:   r.symbol,
       name:     r.shortname || r.longname || r.symbol,

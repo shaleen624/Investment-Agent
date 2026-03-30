@@ -13,30 +13,97 @@ const BASE = 'https://www.nseindia.com';
 
 // NSE requires a session cookie obtained from the homepage first
 const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const SESSION_RETRY_COOLDOWN = 60 * 1000; // 1 minute after hard block
 
-let _session = { cookies: '', expiresAt: 0 };
+let _session = { cookies: '', expiresAt: 0, blockedUntil: 0, lastWarnAt: 0 };
+
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache',
+  'Upgrade-Insecure-Requests': '1',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+};
+
+const API_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Referer': `${BASE}/`,
+  'Origin': BASE,
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache',
+  'X-Requested-With': 'XMLHttpRequest',
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'same-origin',
+};
+
+function logSessionWarning(message) {
+  const now = Date.now();
+  if (now - _session.lastWarnAt >= 15000) {
+    logger.warn(message);
+    _session.lastWarnAt = now;
+  } else {
+    logger.debug(message);
+  }
+}
+
+async function tryBootstrap(url) {
+  const res = await axios.get(url, {
+    headers: BROWSER_HEADERS,
+    timeout: 10000,
+    maxRedirects: 5,
+    validateStatus: (status) => status >= 200 && status < 400,
+  });
+  const setCookie = res.headers['set-cookie'] || [];
+  return setCookie.map((c) => c.split(';')[0]).join('; ');
+}
 
 async function getSession() {
   if (_session.cookies && Date.now() < _session.expiresAt) {
     return _session.cookies;
   }
+  if (_session.blockedUntil && Date.now() < _session.blockedUntil) {
+    return _session.cookies || '';
+  }
 
   try {
-    const res = await axios.get(BASE, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
-          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-      timeout: 10000,
-    });
-    const setCookie = res.headers['set-cookie'] || [];
-    _session.cookies = setCookie.map(c => c.split(';')[0]).join('; ');
+    const bootstrapUrls = [
+      `${BASE}/`,
+      `${BASE}/market-data/live-equity-market`,
+      `${BASE}/option-chain`,
+    ];
+
+    let cookies = '';
+    for (const url of bootstrapUrls) {
+      try {
+        cookies = await tryBootstrap(url);
+        if (cookies) break;
+      } catch (err) {
+        if (err.response?.status === 403) continue;
+        throw err;
+      }
+    }
+
+    _session.cookies = cookies;
     _session.expiresAt = Date.now() + SESSION_TIMEOUT;
+    _session.blockedUntil = 0;
     return _session.cookies;
   } catch (err) {
-    logger.warn(`[NSE] Session refresh failed: ${err.message}`);
+    if (err.response?.status === 403) {
+      _session.blockedUntil = Date.now() + SESSION_RETRY_COOLDOWN;
+    }
+    logSessionWarning(`[NSE] Session refresh failed: ${err.message}`);
     return '';
   }
 }
@@ -45,15 +112,7 @@ async function nseGet(endpoint) {
   const cookies = await getSession();
   try {
     const res = await axios.get(`${BASE}/api/${endpoint}`, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
-          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept':           'application/json, text/plain, */*',
-        'Accept-Language':  'en-US,en;q=0.9',
-        'Referer':          `${BASE}/`,
-        'Cookie':           cookies,
-      },
+      headers: { ...API_HEADERS, Cookie: cookies },
       timeout: 15000,
     });
     return res.data;
@@ -61,14 +120,10 @@ async function nseGet(endpoint) {
     // Retry once with fresh session on 401/403
     if (err.response && [401, 403].includes(err.response.status)) {
       _session.expiresAt = 0; // force refresh
+      _session.cookies = '';
       const freshCookies = await getSession();
       const retry = await axios.get(`${BASE}/api/${endpoint}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Accept':     'application/json',
-          'Referer':    `${BASE}/`,
-          'Cookie':     freshCookies,
-        },
+        headers: { ...API_HEADERS, Cookie: freshCookies },
         timeout: 15000,
       });
       return retry.data;

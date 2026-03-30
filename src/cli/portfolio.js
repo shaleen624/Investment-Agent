@@ -200,7 +200,7 @@ async function addHoldingManually() {
     invested_amount: answers.quantity * answers.avg_buy_price,
   };
 
-  pm.upsertHolding(holding);
+  await pm.upsertHoldingResolved(holding);
   console.log(chalk.green(`\n✓ ${answers.name} added\n`));
 }
 
@@ -234,7 +234,7 @@ async function importFromFile() {
     }]);
 
     if (confirm) {
-      pm.upsertHoldings(holdings);
+      await pm.upsertHoldingsResolved(holdings);
       console.log(chalk.green(`\n✓ Imported ${holdings.length} holdings\n`));
     }
   } catch (err) {
@@ -269,7 +269,7 @@ async function syncFromBroker() {
 
     if (!all.length) { console.log(chalk.yellow('\n⚠ No holdings returned\n')); return; }
 
-    pm.upsertHoldings(all);
+    await pm.upsertHoldingsResolved(all);
     console.log(chalk.green(`\n✓ Synced ${all.length} holdings from Kite\n`));
   } catch (err) {
     console.log(chalk.red(`\n✗ Kite sync failed: ${err.message}\n`));
@@ -297,7 +297,7 @@ async function editHolding() {
     { type: 'input',  name: 'sector',         message: 'Sector:',         default: h.sector || '' },
   ]);
 
-  pm.upsertHolding({ ...h, ...answers });
+  await pm.upsertHoldingResolved({ ...h, ...answers });
   console.log(chalk.green('\n✓ Updated\n'));
 }
 

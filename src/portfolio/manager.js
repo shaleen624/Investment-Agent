@@ -7,6 +7,36 @@
 
 const logger  = require('../config/logger');
 const { run, get: dbGet, all: dbAll } = require('../db');
+const { resolveTickerFromHolding, isLikelyIsin } = require('../sources/market/symbol-resolver');
+
+async function normalizeHoldingForStorage(holding) {
+  const normalized = { ...holding };
+  const symbol = String(normalized.symbol || '').trim();
+  const exchange = String(normalized.exchange || 'NSE').trim().toUpperCase();
+
+  normalized.exchange = exchange;
+
+  if (!symbol) {
+    normalized.symbol = null;
+    normalized.isin = normalized.isin || null;
+    return normalized;
+  }
+
+  if (normalized.isin) {
+    normalized.isin = String(normalized.isin).trim().toUpperCase();
+  }
+
+  const resolved = await resolveTickerFromHolding(normalized);
+  normalized.symbol = resolved.symbol;
+  normalized.exchange = resolved.exchange || exchange;
+  if (resolved.isin || (!normalized.isin && isLikelyIsin(symbol))) {
+    normalized.isin = resolved.isin || symbol.toUpperCase();
+  } else {
+    normalized.isin = normalized.isin || null;
+  }
+
+  return normalized;
+}
 
 // ── Holdings ──────────────────────────────────────────────────────────────────
 
@@ -24,12 +54,19 @@ function upsertHolding(holding) {
   const broker = holding.broker || 'manual';
   const assetType = holding.asset_type || 'equity';
 
-  const existing = holding.symbol
+  const existing = holding.isin
     ? dbGet(
         `SELECT id FROM holdings
-         WHERE user_id = ? AND symbol = ? AND broker = ? AND asset_type = ?`,
-        [userId, holding.symbol, broker, assetType]
+         WHERE user_id = ? AND broker = ? AND asset_type = ?
+           AND (isin = ? OR symbol = ? OR symbol = ?)`,
+        [userId, broker, assetType, holding.isin, holding.symbol, holding.isin]
       )
+    : holding.symbol
+      ? dbGet(
+          `SELECT id FROM holdings
+           WHERE user_id = ? AND symbol = ? AND broker = ? AND asset_type = ?`,
+          [userId, holding.symbol, broker, assetType]
+        )
     : dbGet(
         `SELECT id FROM holdings
          WHERE user_id = ? AND name = ? AND broker = ? AND asset_type = ?`,
@@ -44,8 +81,12 @@ function upsertHolding(holding) {
   if (existing) {
     run(
       `UPDATE holdings SET
+         symbol           = COALESCE(?, symbol),
+         exchange         = COALESCE(?, exchange),
+         name             = COALESCE(?, name),
          quantity         = ?,
          avg_buy_price    = ?,
+         isin             = COALESCE(?, isin),
          invested_amount  = ?,
          current_price    = COALESCE(?, current_price),
          current_value    = COALESCE(?, current_value),
@@ -57,8 +98,12 @@ function upsertHolding(holding) {
          last_updated     = datetime('now')
        WHERE id = ? AND user_id = ?`,
       [
+        holding.symbol || null,
+        holding.exchange || null,
+        holding.name || null,
         holding.quantity,
         holding.avg_buy_price,
+        holding.isin || null,
         investedAmount,
         holding.current_price   || null,
         holding.current_value   || null,
@@ -76,14 +121,15 @@ function upsertHolding(holding) {
   } else {
     const result = run(
       `INSERT INTO holdings
-         (user_id, asset_type, symbol, name, exchange, quantity, avg_buy_price,
+         (user_id, asset_type, symbol, isin, name, exchange, quantity, avg_buy_price,
           current_price, current_value, invested_amount, unrealized_pnl, pnl_percent,
           sector, broker, folio_number, units, nav, maturity_date, interest_rate)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         assetType,
         holding.symbol         || null,
+        holding.isin           || null,
         holding.name,
         holding.exchange       || 'NSE',
         holding.quantity,
@@ -122,6 +168,32 @@ function upsertHoldings(holdings) {
     }
   }
   logger.info(`[Portfolio] Bulk upsert: ${results.inserted} ok, ${results.errors} errors`);
+  return results;
+}
+
+async function upsertHoldingResolved(holding) {
+  const normalized = await normalizeHoldingForStorage(holding);
+  return upsertHolding(normalized);
+}
+
+async function upsertHoldingsResolved(holdings) {
+  const results = { inserted: 0, updated: 0, errors: 0, resolved: 0 };
+  for (const holding of holdings) {
+    try {
+      const normalized = await normalizeHoldingForStorage(holding);
+      if (normalized.isin && normalized.symbol && normalized.symbol !== normalized.isin) {
+        results.resolved++;
+      }
+      upsertHolding(normalized);
+      results.inserted++;
+    } catch (err) {
+      logger.error(`[Portfolio] upsert error for ${holding.name}: ${err.message}`);
+      results.errors++;
+    }
+  }
+  logger.info(
+    `[Portfolio] Bulk upsert: ${results.inserted} ok, ${results.errors} errors, ${results.resolved} ISINs resolved`
+  );
   return results;
 }
 
@@ -441,6 +513,8 @@ function calculateXIRR(userId = null) {
 module.exports = {
   upsertHolding,
   upsertHoldings,
+  upsertHoldingResolved,
+  upsertHoldingsResolved,
   getAllHoldings,
   getHoldingsByType,
   getHolding,

@@ -60,9 +60,9 @@ r.get('/holdings/:id', authenticateToken, (req, res) => {
 });
 
 // POST /api/portfolio/holdings
-r.post('/holdings', authenticateToken, (req, res) => {
+r.post('/holdings', authenticateToken, async (req, res) => {
   try {
-    const id = pm.upsertHolding({ ...req.body, user_id: req.user.id });
+    const id = await pm.upsertHoldingResolved({ ...req.body, user_id: req.user.id });
     res.status(201).json({ id, ...req.body });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -70,11 +70,11 @@ r.post('/holdings', authenticateToken, (req, res) => {
 });
 
 // PUT /api/portfolio/holdings/:id
-r.put('/holdings/:id', authenticateToken, (req, res) => {
+r.put('/holdings/:id', authenticateToken, async (req, res) => {
   const id = parseInt(req.params.id);
   const existing = pm.getHolding(id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  pm.upsertHolding({ ...existing, ...req.body, id, user_id: req.user.id });
+  await pm.upsertHoldingResolved({ ...existing, ...req.body, id, user_id: req.user.id });
   res.json({ id, ...req.body });
 });
 
@@ -92,7 +92,7 @@ r.post('/import/text', authenticateToken, async (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: 'text is required' });
   const holdings = parser.parseText(text).map(h => ({ ...h, user_id: req.user.id }));
-  const result   = pm.upsertHoldings(holdings);
+  const result   = await pm.upsertHoldingsResolved(holdings);
   res.json({ parsed: holdings.length, ...result, holdings });
 });
 
@@ -117,7 +117,7 @@ r.post('/import/file', authenticateToken, upload.single('file'), async (req, res
       });
     }
     const userHoldings = holdings.map(h => ({ ...h, user_id: req.user.id }));
-    const result   = pm.upsertHoldings(userHoldings);
+    const result   = await pm.upsertHoldingsResolved(userHoldings);
     fs.unlink(req.file.path, () => {});
     res.json({ parsed: holdings.length, ...result, holdings: userHoldings });
   } catch (err) {
@@ -127,11 +127,57 @@ r.post('/import/file', authenticateToken, upload.single('file'), async (req, res
 });
 
 // POST /api/portfolio/prices/refresh
-r.post('/prices/refresh', async (_req, res) => {
+r.post('/prices/refresh', authenticateToken, async (req, res) => {
   try {
-    const timeout = new Promise((_, rej) =>
-      setTimeout(() => rej(new Error('Price refresh timed out after 60s')), 60000));
-    const result = await Promise.race([market.updateAllPrices(), timeout]);
+    const timeoutMs = 60000;
+    const progress = {
+      totalHoldings: 0,
+      resolve: {
+        started: 0,
+        completed: 0,
+        resolved: 0,
+        unresolvedIsins: 0,
+        durationMs: 0,
+        unresolvedHoldings: [],
+      },
+      batches: {
+        attempted: 0,
+        completed: 0,
+        symbolsRequested: 0,
+        quotesReturned: 0,
+        durationMs: 0,
+        lastBatchSymbols: [],
+        errors: [],
+      },
+      fallback: {
+        attempted: 0,
+        completed: 0,
+        quotesReturned: 0,
+        durationMs: 0,
+        lastSymbols: [],
+      },
+      apply: { processed: 0, updated: 0, skipped: 0, failed: 0, durationMs: 0, lastSymbol: null },
+      elapsedMs: 0,
+    };
+    const timeout = new Promise((resolve) =>
+      setTimeout(() => resolve({
+        timedOut: true,
+        error: 'Price refresh timed out after 60s',
+        updated: progress.apply.updated,
+        failed: progress.apply.failed,
+        skipped: progress.apply.skipped,
+        partial: true,
+        remaining: Math.max(0, progress.totalHoldings - progress.apply.processed),
+        unresolvedHoldings: progress.resolve.unresolvedHoldings || [],
+        debug: progress,
+      }), timeoutMs));
+    const result = await Promise.race([
+      market.updateAllPrices(req.user.id, { deadlineMs: timeoutMs, progress }),
+      timeout,
+    ]);
+    if (result?.timedOut) {
+      return res.status(504).json(result);
+    }
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -154,7 +200,7 @@ r.post('/sync/:broker', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: `Unknown broker: ${broker}` });
     }
     const userHoldings = holdings.map(h => ({ ...h, user_id: req.user.id }));
-    const result = pm.upsertHoldings(userHoldings);
+    const result = await pm.upsertHoldingsResolved(userHoldings);
     res.json({ synced: holdings.length, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });

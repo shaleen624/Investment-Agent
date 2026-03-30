@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS holdings (
                       'fd','nps','crypto','us_stock','other'
                     )),
   symbol          TEXT,               -- NSE/BSE ticker or ISIN
+  isin            TEXT,               -- original ISIN when symbol is normalized to a ticker
   name            TEXT    NOT NULL,
   exchange        TEXT    DEFAULT 'NSE',  -- NSE | BSE | NASDAQ | NYSE | etc.
   quantity        REAL    NOT NULL DEFAULT 0,

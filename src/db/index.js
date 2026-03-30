@@ -63,6 +63,15 @@ function getDb() {
     }
   } catch {}
 
+  try {
+    const holdingsInfo = _db.pragma('table_info(holdings)');
+    const hasIsin = holdingsInfo.some((col) => col.name === 'isin');
+    if (!hasIsin) {
+      _db.exec('ALTER TABLE holdings ADD COLUMN isin TEXT');
+    }
+    _db.exec('CREATE INDEX IF NOT EXISTS idx_holdings_isin ON holdings(isin)');
+  } catch {}
+
   return _db;
 }
 

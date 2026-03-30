@@ -12,6 +12,7 @@
 
 const logger   = require('../config/logger');
 const { config } = require('../config');
+const nvidia   = require('./nvidia');
 
 // ── Claude (Anthropic) ────────────────────────────────────────────────────────
 
@@ -65,39 +66,65 @@ async function chatWithOpenAI(messages, options = {}) {
  * @param {object} options - { provider, model, maxTokens }
  * @returns {Promise<string>} LLM response text
  */
+// ── Fallback chain ────────────────────────────────────────────────────────────
+// Priority order tried when a provider fails (or has no key).
+// First provider with a configured key wins.
+const FALLBACK_ORDER = ['claude', 'kimi', 'deepseek', 'openai'];
+
+function _hasKey(provider) {
+  if (provider === 'claude')    return !!config.llm.claude.apiKey;
+  if (provider === 'openai')    return !!config.llm.openai.apiKey;
+  if (provider === 'kimi')      return !!config.llm.nvidia.apiKey;
+  if (provider === 'deepseek')  return !!config.llm.nvidia.apiKey;
+  return false;
+}
+
 async function chat(prompt, options = {}) {
   const provider = options.provider || config.llm.provider;
 
   if (provider === 'none') {
-    throw new Error('LLM provider is set to "none". Configure ANTHROPIC_API_KEY or OPENAI_API_KEY.');
+    throw new Error(
+      'LLM provider is "none". Set LLM_PROVIDER and the matching API key in .env.'
+    );
   }
-
-  const messages = [{ role: 'user', content: prompt.user }];
 
   logger.debug(`[LLM] Sending request via ${provider}`);
 
   try {
     if (provider === 'claude') {
+      const messages = [{ role: 'user', content: prompt.user }];
       return await chatWithClaude(messages, { ...options, system: prompt.system });
     }
 
     if (provider === 'openai') {
-      const oaiMessages = prompt.system
-        ? [{ role: 'system', content: prompt.system }, ...messages]
-        : messages;
-      return await chatWithOpenAI(oaiMessages, options);
+      const messages = prompt.system
+        ? [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }]
+        : [{ role: 'user', content: prompt.user }];
+      return await chatWithOpenAI(messages, options);
     }
 
-    throw new Error(`Unknown LLM provider: ${provider}`);
-  } catch (err) {
-    // Auto-fallback: if primary fails and fallback is configured, try the other
-    if (!options._isFallback) {
-      const fallback = provider === 'claude' ? 'openai' : 'claude';
-      const fallbackKey = fallback === 'claude' ? config.llm.claude.apiKey : config.llm.openai.apiKey;
+    if (provider === 'kimi' || provider === 'deepseek') {
+      return await nvidia.chat(provider, prompt, {
+        ...options,
+        thinking: provider === 'deepseek'
+          ? (options.thinking ?? config.llm.nvidia.deepseekThinking)
+          : undefined,
+      });
+    }
 
-      if (fallbackKey) {
-        logger.warn(`[LLM] ${provider} failed (${err.message}). Falling back to ${fallback}`);
-        return chat(prompt, { ...options, provider: fallback, _isFallback: true });
+    throw new Error(`Unknown LLM provider: "${provider}"`);
+
+  } catch (err) {
+    // Auto-fallback to the next available provider in the chain
+    if (!options._isFallback) {
+      const currentIdx = FALLBACK_ORDER.indexOf(provider);
+      const next = FALLBACK_ORDER
+        .slice(currentIdx + 1)
+        .find(p => _hasKey(p) && p !== provider);
+
+      if (next) {
+        logger.warn(`[LLM] ${provider} failed (${err.message}). Falling back to ${next}`);
+        return chat(prompt, { ...options, provider: next, _isFallback: true });
       }
     }
     throw err;
@@ -138,10 +165,10 @@ function extractJSON(text) {
  */
 function isAvailable() {
   if (config.llm.provider === 'none') return false;
-  if (config.llm.provider === 'claude' && config.llm.claude.apiKey) return true;
-  if (config.llm.provider === 'openai' && config.llm.openai.apiKey) return true;
-  // Check if either key is set (for fallback)
-  return !!(config.llm.claude.apiKey || config.llm.openai.apiKey);
+  // Primary provider has a key?
+  if (_hasKey(config.llm.provider)) return true;
+  // Any fallback provider has a key?
+  return FALLBACK_ORDER.some(p => _hasKey(p));
 }
 
 module.exports = { chat, extractJSON, isAvailable };

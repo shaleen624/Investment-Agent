@@ -154,22 +154,39 @@ HDFC Flexi Cap MF - 1250.345 units, NAV 48.23, folio 123456
 
 ## LLM Configuration
 
+Four providers supported. Set `LLM_PROVIDER` to one — if it fails, the agent auto-falls back through the chain: **claude → kimi → deepseek → openai**.
+
 ```env
-# Primary: Claude (Anthropic)
+# ── Option 1: Claude (Anthropic) ──────────────────────
 LLM_PROVIDER=claude
 ANTHROPIC_API_KEY=sk-ant-...
-CLAUDE_MODEL=claude-sonnet-4-6
+CLAUDE_MODEL=claude-sonnet-4-6        # or claude-opus-4-6
 
-# OR: OpenAI
+# ── Option 2: Kimi K2 (Moonshot AI via NVIDIA NIM) ────
+LLM_PROVIDER=kimi
+NVIDIA_API_KEY=nvapi-...
+KIMI_MODEL=moonshotai/kimi-k2.5       # 128k context, strong reasoning
+
+# ── Option 3: DeepSeek V3 (via NVIDIA NIM) ────────────
+LLM_PROVIDER=deepseek
+NVIDIA_API_KEY=nvapi-...
+DEEPSEEK_MODEL=deepseek-ai/deepseek-v3.2
+DEEPSEEK_THINKING=true                # enables chain-of-thought (slower but deeper)
+
+# ── Option 4: OpenAI ──────────────────────────────────
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o
 
-# Disable LLM (get fallback text-only briefs)
+# ── Disable LLM (text-only fallback briefs) ───────────
 LLM_PROVIDER=none
 ```
 
-If primary fails, the agent auto-falls back to the other provider (if key is set).
+> **NVIDIA NIM** — one `NVIDIA_API_KEY` covers both Kimi K2 and DeepSeek.
+> Get yours free at [build.nvidia.com](https://build.nvidia.com).
+>
+> **DeepSeek thinking mode** — when `DEEPSEEK_THINKING=true`, the model's chain-of-thought
+> is logged at debug level and stripped from the final brief output.
 
 ---
 

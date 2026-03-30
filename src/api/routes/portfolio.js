@@ -22,8 +22,17 @@ const upload = multer({
 
 // GET /api/portfolio/summary
 r.get('/summary', authenticateToken, (req, res) => {
-  const summary = pm.getPortfolioSummary(req.user.id);
-  const xirr    = pm.calculateXIRR(req.user.id);
+  const summary = pm.getPortfolioSummary(req.user.id) || {
+    totalInvested: 0,
+    totalCurrent: 0,
+    unrealizedPnl: 0,
+    pnlPercent: 0,
+    holdingsCount: 0,
+    byType: {},
+    bySector: {},
+    holdings: [],
+  };
+  const xirr = pm.calculateXIRR(req.user.id);
   res.json({ ...summary, xirr });
 });
 

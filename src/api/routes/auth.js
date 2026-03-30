@@ -1,12 +1,13 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { run, get } = require('../../db');
+const { getDb } = require('../../db');
 
 const router = express.Router();
 
 // Register endpoint
 router.post('/register', async (req, res) => {
+  const db = getDb();
   try {
     const { username, password } = req.body;
 
@@ -15,7 +16,7 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if user already exists
-    const existingUser = await get('SELECT id FROM users WHERE username = ?', [username]);
+    const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
     if (existingUser) {
       return res.status(409).json({ error: 'Username already exists' });
     }
@@ -27,22 +28,28 @@ router.post('/register', async (req, res) => {
     const email = req.body.email || `${username}@example.com`;
 
     // Insert new user
-    const result = await run(
-      'INSERT INTO users (username, email, password_hash, created_at) VALUES (?, ?, ?, datetime("now"))',
-      [username, email, hashedPassword]
-    );
+    const result = db.prepare(
+      "INSERT INTO users (username, email, password_hash, created_at) VALUES (?, ?, ?, datetime('now'))"
+    ).run(username, email, hashedPassword);
+
+    const userId = Number(result.lastInsertRowid);
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: result.lastID, username },
+      { userId, username },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
     );
 
+    // Store session
+    db.prepare(
+      "INSERT INTO user_sessions (user_id, token, expires_at) VALUES (?, ?, datetime('now', '+24 hours'))"
+    ).run(userId, token);
+
     res.status(201).json({
       message: 'User registered successfully',
       token,
-      user: { id: result.lastID, username }
+      user: { id: userId, username }
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -52,6 +59,7 @@ router.post('/register', async (req, res) => {
 
 // Login endpoint
 router.post('/login', async (req, res) => {
+  const db = getDb();
   try {
     const { username, password } = req.body;
 
@@ -60,7 +68,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user
-    const user = await get('SELECT id, username, password_hash FROM users WHERE username = ?', [username]);
+    const user = db.prepare('SELECT id, username, password_hash FROM users WHERE username = ?').get(username);
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -79,10 +87,9 @@ router.post('/login', async (req, res) => {
     );
 
     // Store session
-    await run(
-      'INSERT INTO user_sessions (user_id, token, expires_at) VALUES (?, ?, datetime("now", "+24 hours"))',
-      [user.id, token]
-    );
+    db.prepare(
+      "INSERT INTO user_sessions (user_id, token, expires_at) VALUES (?, ?, datetime('now', '+24 hours'))"
+    ).run(user.id, token);
 
     res.json({
       message: 'Login successful',
@@ -100,7 +107,7 @@ router.post('/logout', async (req, res) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (token) {
-      await db.run('DELETE FROM user_sessions WHERE token = ?', [token]);
+      run('DELETE FROM user_sessions WHERE token = ?', [token]);
     }
     res.json({ message: 'Logout successful' });
   } catch (error) {
@@ -121,7 +128,7 @@ router.get('/verify', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
 
     // Check if session exists and is not expired
-    const session = await db.get(
+    const session = get(
       'SELECT id FROM user_sessions WHERE token = ? AND expires_at > datetime("now")',
       [token]
     );

@@ -24,6 +24,10 @@ export class ApiService {
     return this.http.post<void>(`${this.base}/auth/logout`, {});
   }
 
+  verify(): Observable<{ valid: boolean; user: any }> {
+    return this.http.get<any>(`${this.base}/auth/verify`);
+  }
+
   // ── Status ────────────────────────────────────────────────────────────────
   status(): Observable<AgentStatus> {
     return this.http.get<AgentStatus>(`${this.base}/status`);

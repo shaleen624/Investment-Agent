@@ -41,7 +41,7 @@ export class DashboardPage {
 
   donutSlices = computed<DonutSlice[]>(() => {
     const s = this.summary();
-    if (!s) return [];
+    if (!s || !s.byType) return [];
     return Object.entries(s.byType)
       .filter(([, v]) => v.current > 0)
       .sort(([, a], [, b]) => b.current - a.current)
@@ -55,13 +55,13 @@ export class DashboardPage {
   pnlClass = computed(() => {
     const s = this.summary();
     if (!s) return '';
-    return s.pnlPercent >= 0 ? 'positive' : 'negative';
+    return (s.pnlPercent || 0) >= 0 ? 'positive' : 'negative';
   });
 
   pnlSign = computed(() => {
     const s = this.summary();
     if (!s) return '';
-    return s.pnlPercent >= 0 ? '+' : '';
+    return (s.pnlPercent || 0) >= 0 ? '+' : '';
   });
 
   indices = computed(() => {

@@ -189,9 +189,26 @@
 
   .nav-footer {
     display: flex;
+    flex-direction: column;
+    gap: 12px;
     padding: 16px 12px;
     border-top: 1px solid var(--border);
     margin-top: auto;
+  }
+
+  .logout-btn {
+    border: none;
+    background: none;
+    cursor: pointer;
+    width: 100%;
+    color: var(--red);
+    opacity: 0.8;
+
+    &:hover {
+      color: var(--red);
+      opacity: 1;
+      &::before { background: rgba(239, 68, 68, 0.1); }
+    }
   }
 
   .agent-badge {

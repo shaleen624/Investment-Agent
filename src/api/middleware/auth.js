@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { db } = require('../../db');
+const { get } = require('../../db');
 
 /**
  * Authentication middleware that verifies JWT tokens and attaches user info to req
@@ -17,8 +17,8 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
 
     // Check if session exists and is not expired
-    const session = await db.get(
-      'SELECT id FROM user_sessions WHERE token = ? AND expires_at > datetime("now")',
+    const session = get(
+      "SELECT id FROM user_sessions WHERE token = ? AND expires_at > datetime('now')",
       [token]
     );
 

@@ -15,7 +15,7 @@ const upload = multer({
   dest: path.resolve(process.env.UPLOADS_PATH || './uploads'),
   limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const ok = ['.pdf', '.csv', '.txt'].includes(path.extname(file.originalname).toLowerCase());
+    const ok = ['.pdf', '.csv', '.txt', '.xlsx', '.xls'].includes(path.extname(file.originalname).toLowerCase());
     cb(ok ? null : new Error('Only PDF, CSV, TXT files allowed'), ok);
   },
 });

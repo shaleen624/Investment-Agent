@@ -1,0 +1,58 @@
+'use strict';
+const { Router } = require('express');
+const { all }    = require('../../db');
+const market     = require('../../sources/market');
+
+const r = Router();
+
+// GET /api/market/snapshot  — latest stored snapshot
+r.get('/snapshot', (_req, res) => {
+  const snap = market.getLatestSnapshot();
+  if (!snap) return res.status(404).json({ error: 'No snapshot yet. Run prices refresh first.' });
+  res.json(snap);
+});
+
+// GET /api/market/snapshot/previous
+r.get('/snapshot/previous', (_req, res) => {
+  const snap = market.getPreviousDaySnapshot();
+  res.json(snap || null);
+});
+
+// GET /api/market/snapshots?days=7  — history for sparklines
+r.get('/snapshots', (req, res) => {
+  const days = parseInt(req.query.days || '7');
+  const rows = all(
+    `SELECT * FROM market_snapshots
+     WHERE date >= date('now', '-' || ? || ' days')
+     ORDER BY date ASC, time ASC`,
+    [days]
+  );
+  res.json(rows.map(r => ({
+    ...r,
+    raw_data: JSON.parse(r.raw_data || '{}'),
+  })));
+});
+
+// POST /api/market/refresh  — live fetch + store snapshot
+r.post('/refresh', async (_req, res) => {
+  try {
+    const snap = await market.captureMarketSnapshot();
+    res.json(snap);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/market/recommendations?limit=10
+r.get('/recommendations', (req, res) => {
+  const limit = parseInt(req.query.limit || '10');
+  const rows  = all(
+    `SELECT r.*, h.name as holding_name FROM recommendations r
+     LEFT JOIN holdings h ON r.holding_id = h.id
+     ORDER BY r.created_at DESC LIMIT ?`,
+    [limit]
+  );
+  res.json(rows);
+});
+
+module.exports = r;

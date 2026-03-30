@@ -1,0 +1,156 @@
+.dashboard-page {
+  animation: fadeIn 0.3s ease;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.card {
+  margin-bottom: 16px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+
+  .card-title { margin-bottom: 0; }
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 16px;
+}
+
+// ── Indices ──────────────────────────────────────────────────────────────────
+.index-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.index-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.index-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+.index-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-feature-settings: "tnum";
+}
+
+// ── Recommendations ──────────────────────────────────────────────────────────
+.rec-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.rec-item {
+  gap: 10px;
+}
+
+.rec-symbol {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+  min-width: 60px;
+  font-family: var(--font-mono);
+}
+
+.rec-name {
+  font-size: 13px;
+  color: var(--text-muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer { flex: 1; }
+
+.rec-conf {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-feature-settings: "tnum";
+  min-width: 32px;
+  text-align: right;
+}
+
+// ── News ─────────────────────────────────────────────────────────────────────
+.news-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.news-item {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.news-content { flex: 1; min-width: 0; }
+
+.news-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  line-height: 1.4;
+  margin-bottom: 4px;
+
+  &:hover { color: var(--accent); }
+}
+
+.news-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.news-source { font-weight: 600; }
+
+// ── Skeleton placeholders ─────────────────────────────────────────────────────
+.list-skeleton {
+  height: 52px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+// ── Desktop tweaks ────────────────────────────────────────────────────────────
+@media (min-width: 768px) {
+  .metrics-grid { grid-template-columns: repeat(4, 1fr); }
+  .two-col      { grid-template-columns: 1fr 1fr; }
+}

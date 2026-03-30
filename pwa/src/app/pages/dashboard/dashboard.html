@@ -1,0 +1,149 @@
+<div class="page dashboard-page">
+  <header class="page-header">
+    <h1 class="page-title">Portfolio Overview</h1>
+    <span class="page-subtitle">{{ loading() ? 'Loading…' : 'Live snapshot' }}</span>
+  </header>
+
+  @if (error()) {
+    <div class="empty-state">
+      <div class="empty-icon">⚠️</div>
+      <div class="empty-title">{{ error() }}</div>
+      <div class="empty-body">Make sure the agent backend is running.</div>
+    </div>
+  }
+
+  <!-- ── Metrics row ── -->
+  <section class="metrics-grid">
+    <app-metric-card
+      label="Total Invested"
+      [value]="loading() ? '' : ((summary()?.totalInvested ?? 0) | inr:0)"
+      [loading]="loading()" />
+
+    <app-metric-card
+      label="Current Value"
+      [value]="loading() ? '' : ((summary()?.totalCurrent ?? 0) | inr:0)"
+      [loading]="loading()" />
+
+    <app-metric-card
+      label="Unrealized P&L"
+      [value]="loading() ? '' : ((summary()?.unrealizedPnl ?? 0) | inr:0)"
+      [sub]="loading() ? '' : (pnlSign() + (summary()?.pnlPercent ?? 0).toFixed(2) + '%')"
+      [subClass]="pnlClass()"
+      [loading]="loading()" />
+
+    <app-metric-card
+      label="Holdings"
+      [value]="loading() ? '' : (summary()?.holdingsCount ?? 0).toString()"
+      [sub]="loading() ? '' : (summary()?.xirr != null ? 'XIRR ' + summary()!.xirr!.toFixed(1) + '%' : '')"
+      [loading]="loading()" />
+  </section>
+
+  <!-- ── Allocation + Indices ── -->
+  <div class="two-col">
+    <!-- Allocation donut -->
+    <section class="card">
+      <h2 class="card-title">Allocation</h2>
+      @if (loading()) {
+        <div class="skeleton" style="height:180px;border-radius:50%;width:180px;margin:0 auto"></div>
+      } @else if (donutSlices().length) {
+        <app-donut-chart [slices]="donutSlices()" />
+      } @else {
+        <div class="empty-state" style="padding:24px">
+          <div class="empty-title">No holdings yet</div>
+          <a routerLink="/holdings" class="btn btn-sm">Add Holdings</a>
+        </div>
+      }
+    </section>
+
+    <!-- Market indices -->
+    <section class="card">
+      <h2 class="card-title">Market Indices</h2>
+      @if (loading()) {
+        @for (_ of [1,2,3,4,5]; track $index) {
+          <div class="skeleton" style="height:36px;margin-bottom:8px;border-radius:8px"></div>
+        }
+      } @else if (indices().length) {
+        <ul class="index-list">
+          @for (idx of indices(); track idx.key) {
+            <li class="index-row">
+              <span class="index-label">{{ idx.label }}</span>
+              <span class="index-value">{{ formatIndex(idx.value) }}</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <div class="empty-state" style="padding:24px">
+          <div class="empty-title">No market data</div>
+        </div>
+      }
+    </section>
+  </div>
+
+  <!-- ── Recommendations ── -->
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">AI Recommendations</h2>
+      <a routerLink="/market" class="btn btn-ghost btn-sm">View all</a>
+    </div>
+    @if (loading()) {
+      @for (_ of [1,2,3]; track $index) {
+        <div class="skeleton list-skeleton"></div>
+      }
+    } @else if (recs().length) {
+      <ul class="rec-list">
+        @for (rec of recs(); track rec.id) {
+          <li class="list-item rec-item">
+            <div class="rec-symbol">{{ rec.symbol }}</div>
+            <div class="rec-name">{{ rec.name }}</div>
+            <div class="spacer"></div>
+            <span class="badge badge-{{ actionClass(rec.action) }}">{{ rec.action | uppercase }}</span>
+            <span class="rec-conf" title="Confidence">{{ rec.confidence }}%</span>
+          </li>
+        }
+      </ul>
+    } @else {
+      <div class="empty-state" style="padding:20px">
+        <div class="empty-title">Generate a brief to get recommendations</div>
+        <a routerLink="/briefs" class="btn btn-sm">Go to Briefs</a>
+      </div>
+    }
+  </section>
+
+  <!-- ── Latest News ── -->
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">Latest News</h2>
+      <a routerLink="/market" class="btn btn-ghost btn-sm">View all</a>
+    </div>
+    @if (loading()) {
+      @for (_ of [1,2,3]; track $index) {
+        <div class="skeleton list-skeleton"></div>
+      }
+    } @else if (news().length) {
+      <ul class="news-list">
+        @for (article of news(); track article.id) {
+          <li class="list-item news-item">
+            <div class="news-content">
+              <a [href]="article.url" target="_blank" rel="noopener" class="news-title">
+                {{ article.title }}
+              </a>
+              <div class="news-meta">
+                <span class="news-source">{{ article.source }}</span>
+                <span class="news-time">{{ timeAgo(article.published_at) }}</span>
+              </div>
+            </div>
+            @if (article.sentiment) {
+              <span class="badge badge-{{ sentimentClass(article.sentiment) }} badge-sm">
+                {{ article.sentiment }}
+              </span>
+            }
+          </li>
+        }
+      </ul>
+    } @else {
+      <div class="empty-state" style="padding:20px">
+        <div class="empty-title">No recent news</div>
+      </div>
+    }
+  </section>
+</div>

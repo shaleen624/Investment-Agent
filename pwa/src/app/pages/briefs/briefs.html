@@ -1,0 +1,109 @@
+<div class="page briefs-page">
+  <header class="page-header">
+    <h1 class="page-title">Daily Briefs</h1>
+    <button class="btn btn-primary btn-sm"
+      [disabled]="generating()"
+      (click)="generate()">
+      {{ generating() ? '&#9654; Generating…' : '&#9654; Generate ' + tab() }}
+    </button>
+  </header>
+
+  @if (genError()) {
+    <div class="error-banner">{{ genError() }}</div>
+  }
+
+  <!-- ── Tabs ── -->
+  <div class="briefs-tabs">
+    <button class="tab-btn" [class.active]="tab() === 'morning'" (click)="switchTab('morning')">
+      &#9728; Morning
+    </button>
+    <button class="tab-btn" [class.active]="tab() === 'evening'" (click)="switchTab('evening')">
+      &#9790; Evening
+    </button>
+  </div>
+
+  <!-- ── Content ── -->
+  <div class="briefs-layout">
+    <!-- Sidebar: list of briefs -->
+    <aside class="briefs-list-panel">
+      @if (loading()) {
+        @for (_ of [1,2,3]; track $index) {
+          <div class="skeleton brief-skeleton"></div>
+        }
+      } @else if (filtered().length === 0) {
+        <div class="empty-state" style="padding:24px 16px">
+          <div class="empty-title">No {{ tab() }} briefs yet</div>
+          <div class="empty-body">Click Generate to create your first brief.</div>
+        </div>
+      } @else {
+        <ul class="brief-list">
+          @for (b of filtered(); track b.id) {
+            <li class="brief-list-item"
+              [class.selected]="selected()?.id === b.id"
+              (click)="selectBrief(b)">
+              <div class="brief-date">{{ formatDate(b.date) }}</div>
+              @if (b.summary) {
+                <div class="brief-summary">{{ b.summary }}</div>
+              }
+              <div class="brief-channels">
+                @for (ch of b.sent_channels; track ch) {
+                  <span class="channel-badge">{{ ch }}</span>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    </aside>
+
+    <!-- Main: selected brief content -->
+    <main class="brief-content-panel">
+      @if (!selected()) {
+        <div class="empty-state">
+          <div class="empty-icon">{{ tab() === 'morning' ? '☀️' : '🌙' }}</div>
+          <div class="empty-title">Select a brief to read</div>
+        </div>
+      } @else {
+        <div class="brief-content-card">
+          <div class="brief-content-header">
+            <div>
+              <div class="brief-content-date">{{ formatDate(selected()!.date) }}</div>
+              <div class="brief-content-type">{{ selected()!.type | uppercase }} BRIEF</div>
+            </div>
+            @if (selected()!.sent_channels.length) {
+              <div class="brief-sent-info">
+                Sent via: {{ selected()!.sent_channels.join(', ') }}
+              </div>
+            }
+          </div>
+
+          <div class="brief-markdown"
+            [innerHTML]="renderMarkdown(selected()!.content)">
+          </div>
+
+          <!-- Recommendations -->
+          @if (recsLoading()) {
+            <div class="skeleton" style="height:80px;border-radius:10px;margin-top:16px"></div>
+          } @else if (recs().length) {
+            <div class="brief-recs">
+              <h3 class="recs-title">Recommendations</h3>
+              <ul class="recs-list">
+                @for (r of recs(); track r.id) {
+                  <li class="rec-item">
+                    <span class="rec-symbol">{{ r.symbol }}</span>
+                    <span class="rec-name">{{ r.name }}</span>
+                    <span class="badge badge-{{ actionClass(r.action) }}">{{ r.action }}</span>
+                    <span class="rec-conf">{{ r.confidence }}%</span>
+                    @if (r.target_price) {
+                      <span class="rec-target">Target: ₹{{ r.target_price }}</span>
+                    }
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      }
+    </main>
+  </div>
+</div>

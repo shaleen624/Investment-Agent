@@ -1,0 +1,137 @@
+<div class="page market-page">
+  <header class="page-header">
+    <h1 class="page-title">Market</h1>
+    <div class="header-actions">
+      <button class="btn btn-ghost btn-sm" (click)="fetchNews()">&#8635; News</button>
+      <button class="btn btn-ghost btn-sm" [disabled]="refreshing()" (click)="refreshMarket()">
+        {{ refreshing() ? 'Refreshing…' : '&#8635; Prices' }}
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Market indices grid ── -->
+  <section class="card">
+    <h2 class="card-title">Live Indices</h2>
+    @if (loading()) {
+      <div class="indices-grid">
+        @for (_ of [1,2,3,4,5,6]; track $index) {
+          <div class="skeleton index-skeleton"></div>
+        }
+      </div>
+    } @else if (indices().length) {
+      <div class="indices-grid">
+        @for (idx of indices(); track idx.key) {
+          <div class="index-tile">
+            <div class="index-name">{{ idx.label }}</div>
+            <div class="index-price">{{ formatNum(idx.price) }}</div>
+            @if (idx.pct !== 0) {
+              <div class="index-change" [ngClass]="pctClass(idx.pct)">
+                {{ formatPct(idx.pct) }}
+              </div>
+            }
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="empty-state" style="padding:24px">
+        <div class="empty-title">No market data</div>
+        <button class="btn btn-sm" (click)="refreshMarket()">Refresh</button>
+      </div>
+    }
+  </section>
+
+  <!-- ── Recommendations ── -->
+  <section class="card">
+    <h2 class="card-title">AI Recommendations</h2>
+    @if (loading()) {
+      @for (_ of [1,2,3,4]; track $index) {
+        <div class="skeleton rec-skeleton"></div>
+      }
+    } @else if (recs().length) {
+      <div class="table-wrap">
+        <table class="rec-table">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Name</th>
+              <th>Action</th>
+              <th>Confidence</th>
+              <th>Target</th>
+              <th>Stop Loss</th>
+              <th>Horizon</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of recs(); track r.id) {
+              <tr>
+                <td class="sym-cell">{{ r.symbol }}</td>
+                <td class="name-cell">{{ r.name }}</td>
+                <td><span class="badge badge-{{ actionClass(r.action) }}">{{ r.action }}</span></td>
+                <td class="num-cell">{{ r.confidence }}%</td>
+                <td class="num-cell">{{ r.target_price ? ('₹' + r.target_price) : '—' }}</td>
+                <td class="num-cell">{{ r.stop_loss   ? ('₹' + r.stop_loss)   : '—' }}</td>
+                <td><span class="horizon-badge">{{ r.time_horizon.replace('_',' ') }}</span></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else {
+      <div class="empty-state" style="padding:24px">
+        <div class="empty-title">No recommendations yet</div>
+        <div class="empty-body">Generate a morning or evening brief to get AI-powered recommendations.</div>
+      </div>
+    }
+  </section>
+
+  <!-- ── News feed ── -->
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">News Feed</h2>
+      <div class="news-filters">
+        @for (f of ['all','positive','negative','neutral']; track f) {
+          <button class="chip" [class.active]="newsFilter() === f"
+            (click)="newsFilter.set($any(f))">{{ f }}</button>
+        }
+      </div>
+    </div>
+
+    @if (loading()) {
+      @for (_ of [1,2,3,4,5]; track $index) {
+        <div class="skeleton news-skeleton"></div>
+      }
+    } @else if (filteredNews().length) {
+      <ul class="news-list">
+        @for (article of filteredNews(); track article.id) {
+          <li class="news-item list-item">
+            <div class="news-body">
+              <a [href]="article.url" target="_blank" rel="noopener" class="news-title">
+                {{ article.title }}
+              </a>
+              @if (article.summary) {
+                <div class="news-summary">{{ article.summary }}</div>
+              }
+              <div class="news-meta">
+                <span class="news-source">{{ article.source }}</span>
+                <span class="news-time">{{ timeAgo(article.published_at) }}</span>
+                @if (article.impact_score > 0) {
+                  <span class="impact-score" title="Impact score">&#9889; {{ article.impact_score }}</span>
+                }
+              </div>
+            </div>
+            @if (article.sentiment) {
+              <span class="badge badge-{{ sentimentClass(article.sentiment) }} badge-sm">
+                {{ article.sentiment }}
+              </span>
+            }
+          </li>
+        }
+      </ul>
+    } @else {
+      <div class="empty-state" style="padding:24px">
+        <div class="empty-title">No news articles</div>
+        <button class="btn btn-sm" (click)="fetchNews()">Fetch News</button>
+      </div>
+    }
+  </section>
+</div>

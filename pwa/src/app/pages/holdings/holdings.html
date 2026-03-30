@@ -1,0 +1,197 @@
+<div class="page holdings-page">
+  <header class="page-header">
+    <h1 class="page-title">Holdings</h1>
+    <div class="header-actions">
+      <button class="btn btn-ghost btn-sm" (click)="showImport.set(!showImport())">Import</button>
+      <button class="btn btn-ghost btn-sm" (click)="refreshPrices()" [disabled]="loading()">
+        &#8635; Prices
+      </button>
+      <button class="btn btn-primary btn-sm" (click)="openAdd()">+ Add</button>
+    </div>
+  </header>
+
+  <!-- ── Summary strip ── -->
+  <div class="summary-strip">
+    <div class="strip-item">
+      <span class="strip-label">Invested</span>
+      <span class="strip-value">{{ totalInvested() | inr:0 }}</span>
+    </div>
+    <div class="strip-item">
+      <span class="strip-label">Current</span>
+      <span class="strip-value">{{ totalCurrent() | inr:0 }}</span>
+    </div>
+    <div class="strip-item">
+      <span class="strip-label">P&L</span>
+      <span class="strip-value" [ngClass]="totalPnl() >= 0 ? 'positive' : 'negative'">
+        {{ totalPnl() >= 0 ? '+' : '' }}{{ totalPnl() | inr:0 }}
+      </span>
+    </div>
+  </div>
+
+  <!-- ── Import panel ── -->
+  @if (showImport()) {
+    <div class="card import-panel">
+      <div class="import-tabs">
+        <button class="tab-btn" [class.active]="importMode() === 'text'" (click)="importMode.set('text')">Paste Text</button>
+        <button class="tab-btn" [class.active]="importMode() === 'file'" (click)="importMode.set('file')">Upload File</button>
+      </div>
+      @if (importMode() === 'text') {
+        <textarea class="input import-textarea"
+          placeholder="Paste holdings: RELIANCE 10 shares @ ₹2500&#10;HDFC Mutual Fund ₹50000&#10;..."
+          [value]="importText()"
+          (input)="importText.set($any($event.target).value)"
+          rows="5"></textarea>
+        <button class="btn btn-primary" [disabled]="importing() || !importText()" (click)="doImportText()">
+          {{ importing() ? 'Importing…' : 'Import' }}
+        </button>
+      } @else {
+        <label class="file-drop">
+          <input type="file" accept=".csv,.pdf,.xlsx" (change)="doImportFile($event)" style="display:none">
+          <span class="file-icon">&#128190;</span>
+          <span>Click to upload CSV, PDF, or Excel</span>
+        </label>
+      }
+      @if (importError()) {
+        <div class="error-msg">{{ importError() }}</div>
+      }
+    </div>
+  }
+
+  <!-- ── Filter + Search ── -->
+  <div class="filter-bar">
+    <div class="filter-chips">
+      <button class="chip" [class.active]="filter() === 'all'" (click)="filter.set('all')">All</button>
+      @for (t of assetTypes; track t) {
+        <button class="chip" [class.active]="filter() === t" (click)="filter.set(t)">
+          {{ t.replace('_', ' ') | uppercase }}
+        </button>
+      }
+    </div>
+    <input class="input search-input" type="search" placeholder="Search…"
+      [value]="search()" (input)="search.set($any($event.target).value)" />
+  </div>
+
+  <!-- ── Holdings list ── -->
+  @if (loading()) {
+    @for (_ of [1,2,3,4,5]; track $index) {
+      <div class="skeleton holding-skeleton"></div>
+    }
+  } @else if (filtered().length === 0) {
+    <div class="empty-state">
+      <div class="empty-icon">📊</div>
+      <div class="empty-title">No holdings yet</div>
+      <div class="empty-body">Add a holding or import your portfolio to get started.</div>
+      <button class="btn btn-primary" (click)="openAdd()">Add Holding</button>
+    </div>
+  } @else {
+    <ul class="holdings-list">
+      @for (h of filtered(); track h.id) {
+        <li class="holding-card" (click)="openEdit(h)">
+          <div class="holding-left">
+            <div class="asset-icon asset-{{ h.asset_type }}">
+              {{ h.asset_type === 'equity' ? '&#9654;' :
+                 h.asset_type === 'mutual_fund' ? '&#9670;' :
+                 h.asset_type === 'crypto' ? '&#9711;' :
+                 h.asset_type === 'fd' ? '&#9632;' : '&#9679;' }}
+            </div>
+            <div class="holding-info">
+              <div class="holding-name">{{ h.name }}</div>
+              <div class="holding-meta">
+                @if (h.symbol) { <span class="holding-symbol">{{ h.symbol }}</span> }
+                <span class="badge badge-outline">{{ h.asset_type.replace('_',' ') }}</span>
+                <span class="holding-qty">{{ h.quantity }} units</span>
+              </div>
+            </div>
+          </div>
+          <div class="holding-right">
+            <div class="holding-value">{{ h.current_value | inr:0 }}</div>
+            <div class="holding-pnl" [ngClass]="pnlClass(h)">
+              {{ pnlSign(h) }}{{ h.unrealized_pnl | inr:0 }}
+              @if (h.pnl_percent != null) {
+                <span class="pnl-pct">({{ pnlSign(h) }}{{ h.pnl_percent.toFixed(1) }}%)</span>
+              }
+            </div>
+            <button class="icon-btn delete-btn" (click)="$event.stopPropagation(); delete(h)" title="Delete">&#10005;</button>
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</div>
+
+<!-- ── Add/Edit Modal ── -->
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="closeModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>{{ isEditing() ? 'Edit' : 'Add' }} Holding</h3>
+        <button class="icon-btn" (click)="closeModal()">&#10005;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label class="form-label">Name *</label>
+          <input class="input" [value]="editingHolding().name ?? ''"
+            (input)="editField = {key:'name', value: $any($event.target).value}"
+            placeholder="Reliance Industries" />
+        </div>
+        <div class="form-row two-col-form">
+          <div>
+            <label class="form-label">Symbol</label>
+            <input class="input" [value]="editingHolding().symbol ?? ''"
+              (input)="editField = {key:'symbol', value: $any($event.target).value}"
+              placeholder="RELIANCE" />
+          </div>
+          <div>
+            <label class="form-label">Asset Type *</label>
+            <select class="input" [value]="editingHolding().asset_type ?? 'equity'"
+              (change)="editField = {key:'asset_type', value: $any($event.target).value}">
+              @for (t of assetTypes; track t) {
+                <option [value]="t">{{ t.replace('_',' ') }}</option>
+              }
+            </select>
+          </div>
+        </div>
+        <div class="form-row two-col-form">
+          <div>
+            <label class="form-label">Quantity *</label>
+            <input class="input" type="number" [value]="editingHolding().quantity ?? ''"
+              (input)="editField = {key:'quantity', value: +$any($event.target).value}"
+              placeholder="10" min="0" />
+          </div>
+          <div>
+            <label class="form-label">Avg Buy Price *</label>
+            <input class="input" type="number" [value]="editingHolding().avg_buy_price ?? ''"
+              (input)="editField = {key:'avg_buy_price', value: +$any($event.target).value}"
+              placeholder="2500" min="0" />
+          </div>
+        </div>
+        <div class="form-row two-col-form">
+          <div>
+            <label class="form-label">Exchange</label>
+            <input class="input" [value]="editingHolding().exchange ?? ''"
+              (input)="editField = {key:'exchange', value: $any($event.target).value}"
+              placeholder="NSE" />
+          </div>
+          <div>
+            <label class="form-label">Broker</label>
+            <input class="input" [value]="editingHolding().broker ?? ''"
+              (input)="editField = {key:'broker', value: $any($event.target).value}"
+              placeholder="Zerodha" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Sector</label>
+          <input class="input" [value]="editingHolding().sector ?? ''"
+            (input)="editField = {key:'sector', value: $any($event.target).value}"
+            placeholder="Energy" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" (click)="closeModal()">Cancel</button>
+        <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
+          {{ saving() ? 'Saving…' : (isEditing() ? 'Update' : 'Add') }}
+        </button>
+      </div>
+    </div>
+  </div>
+}

@@ -1,0 +1,267 @@
+.briefs-page { animation: fadeIn 0.3s ease; }
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.error-banner {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  color: var(--red);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+.briefs-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 16px;
+  width: fit-content;
+}
+
+.tab-btn {
+  padding: 8px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &.active {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+}
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+.briefs-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+// ── Brief list ────────────────────────────────────────────────────────────────
+.briefs-list-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.brief-skeleton {
+  height: 72px;
+  margin: 8px;
+  border-radius: 8px;
+}
+
+.brief-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.brief-list-item {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+
+  &:last-child { border-bottom: none; }
+
+  &:hover { background: rgba(255,255,255,0.03); }
+
+  &.selected {
+    background: rgba(99,102,241,0.08);
+    border-left: 3px solid var(--accent);
+  }
+}
+
+.brief-date {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.brief-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.brief-channels {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.channel-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(34,211,238,0.1);
+  color: var(--accent-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+// ── Brief content ──────────────────────────────────────────────────────────────
+.brief-content-panel { flex: 1; }
+
+.brief-content-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.brief-content-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brief-content-date {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.brief-content-type {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  margin-top: 4px;
+}
+
+.brief-sent-info {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+// ── Markdown content ──────────────────────────────────────────────────────────
+.brief-markdown {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+
+  h1, h2, h3 {
+    color: var(--text-primary);
+    margin: 20px 0 8px;
+    font-weight: 700;
+  }
+  h1 { font-size: 20px; }
+  h2 { font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 14px; color: var(--accent); }
+
+  strong { color: var(--text-primary); font-weight: 700; }
+  code {
+    background: rgba(255,255,255,0.07);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin-bottom: 4px; }
+}
+
+// ── Recommendations ───────────────────────────────────────────────────────────
+.brief-recs {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.recs-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+}
+
+.recs-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rec-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.rec-symbol {
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  min-width: 60px;
+}
+
+.rec-name {
+  flex: 1;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-conf {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-feature-settings: "tnum";
+}
+
+.rec-target {
+  font-size: 12px;
+  color: var(--accent-2);
+}
+
+// ── Desktop layout ────────────────────────────────────────────────────────────
+@media (min-width: 768px) {
+  .briefs-layout {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .briefs-list-panel {
+    width: 280px;
+    flex-shrink: 0;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+  }
+}

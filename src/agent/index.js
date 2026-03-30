@@ -13,6 +13,7 @@
 const logger    = require('../config/logger');
 const { config, validate } = require('../config');
 const scheduler = require('../scheduler');
+const apiServer = require('../api/server');
 const telegram  = require('../notifications/telegram');
 const whatsapp  = require('../notifications/whatsapp');
 const analysis  = require('../analysis/engine');
@@ -109,7 +110,10 @@ async function start() {
   getDb();
   logger.info('[Agent] Database initialized');
 
-  // 3. Start scheduler
+  // 3. Start REST API server
+  await apiServer.start();
+
+  // 4. Start scheduler
   const { morningTime, eveningTime, timezone } = scheduler.start();
   logger.info(`[Agent] Scheduler started — Morning: ${morningTime}, Evening: ${eveningTime} (${timezone})`);
 

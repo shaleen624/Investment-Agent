@@ -1,0 +1,163 @@
+<div class="page settings-page">
+  <header class="page-header">
+    <h1 class="page-title">Settings</h1>
+  </header>
+
+  <!-- ── Agent status ── -->
+  @if (status(); as s) {
+    <section class="card status-card">
+      <h2 class="card-title">Agent Status</h2>
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="status-label">Agent</span>
+          <span class="status-value" [ngClass]="s.ok ? 'online' : 'offline'">
+            {{ s.ok ? '● Online' : '● Offline' }}
+          </span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">LLM Provider</span>
+          <span class="status-value">{{ s.llm.provider }}</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">LLM Available</span>
+          <span class="status-value" [ngClass]="s.llm.available ? 'online' : 'offline'">
+            {{ s.llm.available ? '● Yes' : '● No' }}
+          </span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Telegram</span>
+          <span class="status-value" [ngClass]="s.notifications.telegram ? 'online' : 'offline'">
+            {{ s.notifications.telegram ? '● Active' : '● Inactive' }}
+          </span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Email</span>
+          <span class="status-value" [ngClass]="s.notifications.email ? 'online' : 'offline'">
+            {{ s.notifications.email ? '● Active' : '● Inactive' }}
+          </span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Morning Brief</span>
+          <span class="status-value">{{ s.schedule.morningTime }}</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Evening Brief</span>
+          <span class="status-value">{{ s.schedule.eveningTime }}</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Timezone</span>
+          <span class="status-value">{{ s.schedule.timezone }}</span>
+        </div>
+      </div>
+      @if (s.warnings.length) {
+        <div class="warnings">
+          @for (w of s.warnings; track $index) {
+            <div class="warning-item">⚠ {{ w }}</div>
+          }
+        </div>
+      }
+    </section>
+  }
+
+  <!-- ── Profile / notification preferences ── -->
+  <section class="card">
+    <h2 class="card-title">Notification Preferences</h2>
+    @if (loading()) {
+      <div class="skeleton" style="height:200px;border-radius:10px"></div>
+    } @else {
+      <div class="form-row">
+        <label class="form-label">Morning Brief Time (HH:MM)</label>
+        <input class="input" type="time"
+          [value]="profile().morning_time ?? '09:00'"
+          (input)="setField('morning_time', $any($event.target).value)" />
+      </div>
+      <div class="form-row">
+        <label class="form-label">Evening Brief Time (HH:MM)</label>
+        <input class="input" type="time"
+          [value]="profile().evening_time ?? '18:00'"
+          (input)="setField('evening_time', $any($event.target).value)" />
+      </div>
+      <div class="form-row">
+        <label class="form-label">Telegram Chat ID</label>
+        <input class="input" type="text"
+          [value]="profile().telegram_chat_id ?? ''"
+          (input)="setField('telegram_chat_id', $any($event.target).value)"
+          placeholder="Get from @userinfobot" />
+      </div>
+      <div class="form-row">
+        <label class="form-label">Email Address</label>
+        <input class="input" type="email"
+          [value]="profile().email ?? ''"
+          (input)="setField('email', $any($event.target).value)"
+          placeholder="you@example.com" />
+      </div>
+      <div class="form-row">
+        <label class="form-label">WhatsApp Number</label>
+        <input class="input" type="tel"
+          [value]="profile().whatsapp ?? ''"
+          (input)="setField('whatsapp', $any($event.target).value)"
+          placeholder="+91XXXXXXXXXX" />
+      </div>
+      <div class="form-row">
+        <label class="form-label">Risk Tolerance</label>
+        <select class="input"
+          [value]="profile().risk_tolerance ?? 'moderate'"
+          (change)="setField('risk_tolerance', $any($event.target).value)">
+          <option value="conservative">Conservative</option>
+          <option value="moderate">Moderate</option>
+          <option value="aggressive">Aggressive</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" [disabled]="saving()" (click)="saveProfile()">
+          {{ saving() ? 'Saving…' : 'Save Preferences' }}
+        </button>
+      </div>
+    }
+  </section>
+
+  <!-- ── Test notifications ── -->
+  <section class="card">
+    <h2 class="card-title">Test Notifications</h2>
+    <p class="card-body">Send a test message to all configured channels.</p>
+    <button class="btn btn-ghost" [disabled]="testing()" (click)="testNotifications()">
+      {{ testing() ? 'Sending…' : '&#9993; Send Test' }}
+    </button>
+
+    @if (testResult(); as res) {
+      <div class="test-results">
+        @for (entry of (res | keyvalue); track entry.key) {
+          <div class="test-row">
+            <span class="test-channel">{{ entry.key }}</span>
+            <span class="test-status" [ngClass]="$any(entry.value).ok ? 'online' : 'offline'">
+              {{ $any(entry.value).ok ? '✓ Sent' : '✗ ' + ($any(entry.value).error ?? 'Failed') }}
+            </span>
+          </div>
+        }
+      </div>
+    }
+  </section>
+
+  <!-- ── About ── -->
+  <section class="card about-card">
+    <h2 class="card-title">About InvestIQ</h2>
+    <div class="about-grid">
+      <div class="about-item">
+        <span class="about-label">Version</span>
+        <span class="about-value">1.0.0</span>
+      </div>
+      <div class="about-item">
+        <span class="about-label">Database</span>
+        <span class="about-value">SQLite (local)</span>
+      </div>
+      <div class="about-item">
+        <span class="about-label">Market Data</span>
+        <span class="about-value">Yahoo Finance · NSE · Alpha Vantage</span>
+      </div>
+      <div class="about-item">
+        <span class="about-label">AI Engine</span>
+        <span class="about-value">Claude · Kimi K2 · DeepSeek V3</span>
+      </div>
+    </div>
+  </section>
+</div>

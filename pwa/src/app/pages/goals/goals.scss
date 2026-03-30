@@ -1,0 +1,188 @@
+.goals-page { animation: fadeIn 0.3s ease; }
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.goal-skeleton {
+  height: 150px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 12px;
+}
+
+.goals-section { margin-bottom: 24px; }
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+}
+
+.goals-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+// ── Goal card ─────────────────────────────────────────────────────────────────
+.goal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+
+  &:hover {
+    border-color: rgba(99,102,241,0.3);
+    transform: translateY(-1px);
+  }
+}
+
+.goal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.goal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.goal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover { background: rgba(244,63,94,0.1); color: var(--red); }
+}
+
+.delete-btn { opacity: 0; }
+.goal-card:hover .delete-btn { opacity: 1; }
+
+.goal-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.goal-meta {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.goal-target, .goal-deadline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meta-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.meta-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-feature-settings: "tnum";
+}
+
+.days-left {
+  font-size: 11px;
+  color: var(--accent-2);
+}
+
+// ── Progress ──────────────────────────────────────────────────────────────────
+.goal-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+.progress-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 32px;
+  text-align: right;
+}
+
+// ── Form ──────────────────────────────────────────────────────────────────────
+.form-row { margin-bottom: 14px; }
+
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.two-col-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+// ── Badge colors for risk ─────────────────────────────────────────────────────
+.badge-success  { background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2); }
+.badge-warning  { background: rgba(251,191,36,0.1);  color: #fbbf24;      border: 1px solid rgba(251,191,36,0.2); }
+.badge-danger   { background: rgba(244,63,94,0.1);   color: var(--red);   border: 1px solid rgba(244,63,94,0.2); }
+
+@media (min-width: 768px) {
+  .goals-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 1200px) {
+  .goals-grid { grid-template-columns: repeat(3, 1fr); }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/@angular/service-worker/config/schema.json",
+  "index": "/index.html",
+  "assetGroups": [
+    {
+      "name": "app-shell",
+      "installMode": "prefetch",
+      "resources": {
+        "files": ["/favicon.ico", "/index.html", "/manifest.webmanifest", "/*.css", "/*.js"]
+      }
+    },
+    {
+      "name": "assets",
+      "installMode": "lazy",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": ["/assets/**", "/icons/**"]
+      }
+    }
+  ],
+  "dataGroups": [
+    {
+      "name": "api-portfolio",
+      "urls": ["/api/portfolio/**", "/api/goals/**"],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 50,
+        "maxAge": "5m",
+        "timeout": "3s"
+      }
+    },
+    {
+      "name": "api-market",
+      "urls": ["/api/market/**", "/api/news/**"],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 20,
+        "maxAge": "5m",
+        "timeout": "5s"
+      }
+    }
+  ]
+}

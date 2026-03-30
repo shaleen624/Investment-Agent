@@ -15,6 +15,13 @@ An AI-powered portfolio analysis agent for Indian markets. Tracks your investmen
 - **Indian market focus** — NSE/BSE equities, Indian MFs, US stock awareness
 - **Free to run** — SQLite database, free-tier APIs, no cloud costs
 
+## AI Agent Instructions
+
+- [Codex / ChatGPT](./AGENTS_CODEX.md)
+- [Claude](./AGENTS_CLAUDE.md)
+- [Gemini](./AGENTS_GEMINI.md)
+- [Copilot](./AGENTS_COPILOT.md)
+
 ---
 
 ## Quick Start

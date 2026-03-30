@@ -21,8 +21,8 @@ export class ApiService {
     return this.http.get<PortfolioSummary>(`${this.base}/portfolio/summary`);
   }
   holdings(type?: string): Observable<Holding[]> {
-    const params = type ? { type } : {};
-    return this.http.get<Holding[]>(`${this.base}/portfolio/holdings`, { params });
+    const options = type ? { params: { type } } : {};
+    return this.http.get<Holding[]>(`${this.base}/portfolio/holdings`, options);
   }
   holding(id: number): Observable<Holding> {
     return this.http.get<Holding>(`${this.base}/portfolio/holdings/${id}`);
@@ -53,7 +53,8 @@ export class ApiService {
 
   // ── Goals ─────────────────────────────────────────────────────────────────
   goals(all = false): Observable<Goal[]> {
-    return this.http.get<Goal[]>(`${this.base}/goals`, { params: all ? { all: 'true' } : {} });
+    const options = all ? { params: { all: 'true' } } : {};
+    return this.http.get<Goal[]>(`${this.base}/goals`, options);
   }
   addGoal(g: Partial<Goal>): Observable<Goal> {
     return this.http.post<Goal>(`${this.base}/goals`, g);

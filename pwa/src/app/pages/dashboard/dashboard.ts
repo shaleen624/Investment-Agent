@@ -1,5 +1,5 @@
 import { Component, inject, signal, computed } from '@angular/core';
-import { NgClass, DecimalPipe, UpperCasePipe } from '@angular/common';
+import { UpperCasePipe }                       from '@angular/common';
 import { RouterLink }                          from '@angular/router';
 import { toSignal }                            from '@angular/core/rxjs-interop';
 import { catchError, of, forkJoin }            from 'rxjs';
@@ -24,7 +24,7 @@ const TYPE_COLORS: Record<string, string> = {
 @Component({
   selector:   'app-dashboard',
   standalone: true,
-  imports:    [NgClass, DecimalPipe, UpperCasePipe, InrPipe, RouterLink, MetricCardComponent, DonutChartComponent],
+  imports:    [UpperCasePipe, InrPipe, RouterLink, MetricCardComponent, DonutChartComponent],
   templateUrl: './dashboard.html',
   styleUrl:    './dashboard.scss',
 })

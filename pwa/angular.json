@@ -28,8 +28,7 @@
             ],
             "styles":         ["src/styles.scss"],
             "scripts":        [],
-            "serviceWorker":  "ngsw-config.json",
-            "proxyConfig":    "proxy.conf.json"
+            "serviceWorker":  "ngsw-config.json"
           },
           "configurations": {
             "production": {
@@ -50,6 +49,9 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "proxyConfig": "proxy.conf.json"
+          },
           "configurations": {
             "production":  { "buildTarget": "investment-pwa:build:production" },
             "development": { "buildTarget": "investment-pwa:build:development" }

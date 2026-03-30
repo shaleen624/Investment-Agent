@@ -1,14 +1,13 @@
 import { Component, inject, signal, computed } from '@angular/core';
 import { NgClass }                             from '@angular/common';
 import { ApiService }                          from '../../core/services/api.service';
-import { InrPipe }                             from '../../shared/pipes/inr.pipe';
 import type { MarketSnapshot, Recommendation, NewsArticle } from '../../core/models';
 import { catchError, of, forkJoin }            from 'rxjs';
 
 @Component({
   selector:    'app-market',
   standalone:  true,
-  imports:     [NgClass, InrPipe],
+  imports:     [NgClass],
   templateUrl: './market.html',
   styleUrl:    './market.scss',
 })

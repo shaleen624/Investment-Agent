@@ -169,7 +169,7 @@ KIMI_MODEL=moonshotai/kimi-k2.5       # 128k context, strong reasoning
 
 # ── Option 3: DeepSeek V3 (via NVIDIA NIM) ────────────
 LLM_PROVIDER=deepseek
-NVIDIA_API_KEY=nvapi-...
+NVIDIA_API_KEY=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
 DEEPSEEK_MODEL=deepseek-ai/deepseek-v3.2
 DEEPSEEK_THINKING=true                # enables chain-of-thought (slower but deeper)
 

@@ -16,7 +16,8 @@
     "analyze": "node index.js analyze",
     "status": "node index.js status",
     "notify:test": "node index.js notify test",
-    "install:all": "npm install && npm install --prefix pwa"
+    "install:all": "npm install && npm install --prefix pwa",
+    "rebuild": "PUPPETEER_SKIP_DOWNLOAD=true npm rebuild"
   },
   "config": {
     "puppeteer_skip_chromium_download": "true"

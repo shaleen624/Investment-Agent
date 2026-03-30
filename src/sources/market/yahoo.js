@@ -8,9 +8,14 @@
  */
 
 const logger = require('../../config/logger');
+const axios = require('axios');
 
 let yf = null;
 let _yfReady = false;
+const YAHOO_HOSTS = process.env.YAHOO_QUERY_HOST
+  ? [process.env.YAHOO_QUERY_HOST, 'query1.finance.yahoo.com', 'query2.finance.yahoo.com']
+  : ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'];
+const DEFAULT_TIMEOUT_MS = 12000;
 
 // yahoo-finance2 v2.14+ is ESM-only and exports a class; instantiate it
 async function getYF() {
@@ -39,40 +44,88 @@ function toYahooTicker(symbol, exchange = 'NSE') {
   return symbol; // US stocks need no suffix
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function yahooGet(path, params = {}, attempt = 1, hostIdx = 0) {
+  const host = YAHOO_HOSTS[hostIdx] || YAHOO_HOSTS[0];
+  try {
+    const { data } = await axios.get(`https://${host}${path}`, {
+      params,
+      timeout: DEFAULT_TIMEOUT_MS,
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'Mozilla/5.0 Investment-Agent/0.1',
+      },
+    });
+    return data;
+  } catch (err) {
+    const status = err?.response?.status;
+    const retriable = status === 429 || status === 503 || status === 504;
+    const dnsOrNetwork = !status;
+    if ((retriable || dnsOrNetwork) && hostIdx < YAHOO_HOSTS.length - 1) {
+      return yahooGet(path, params, attempt, hostIdx + 1);
+    }
+    if (retriable && attempt < 3) {
+      await sleep(400 * attempt);
+      return yahooGet(path, params, attempt + 1, hostIdx);
+    }
+    throw err;
+  }
+}
+
+async function fetchQuotesNoCrumb(tickers = []) {
+  if (!tickers.length) return [];
+  const data = await yahooGet('/v7/finance/quote', { symbols: tickers.join(',') });
+  return data?.quoteResponse?.result || [];
+}
+
+function mapQuoteShape(symbol, exchange, ticker, q = {}) {
+  return {
+    symbol,
+    ticker,
+    exchange,
+    name:          q.shortName || q.longName || symbol,
+    price:         q.regularMarketPrice,
+    change:        q.regularMarketChange,
+    changePercent: q.regularMarketChangePercent,
+    open:          q.regularMarketOpen,
+    high:          q.regularMarketDayHigh,
+    low:           q.regularMarketDayLow,
+    prevClose:     q.regularMarketPreviousClose,
+    volume:        q.regularMarketVolume,
+    marketCap:     q.marketCap,
+    pe:            q.trailingPE,
+    week52High:    q.fiftyTwoWeekHigh,
+    week52Low:     q.fiftyTwoWeekLow,
+    currency:      q.currency,
+    sector:        q.sector,
+    industry:      q.industry,
+    fetchedAt:     new Date().toISOString(),
+  };
+}
+
 /**
  * Fetch current quote for a single symbol.
  * @param {string} symbol  - e.g. "RELIANCE", "TCS", "AAPL"
  * @param {string} exchange - "NSE" | "BSE" | "NYSE" | "NASDAQ" | ""
  */
 async function getQuote(symbol, exchange = 'NSE') {
-  const yf = await getYF();
-  if (!yf) throw new Error('yahoo-finance2 not available');
-
   const ticker = toYahooTicker(symbol, exchange);
   try {
+    const [q] = await fetchQuotesNoCrumb([ticker]);
+    if (q) return mapQuoteShape(symbol, exchange, ticker, q);
+  } catch (err) {
+    logger.warn(`[Yahoo] no-crumb quote fetch failed for ${ticker}: ${err.message}`);
+  }
+
+  // Fallback to yahoo-finance2 quote (may need crumb/cookie).
+  const yf = await getYF();
+  if (!yf || typeof yf.quote !== 'function') throw new Error('yahoo-finance2 quote not available');
+  try {
     const q = await yf.quote(ticker);
-    return {
-      symbol,
-      ticker,
-      exchange,
-      name:          q.shortName || q.longName || symbol,
-      price:         q.regularMarketPrice,
-      change:        q.regularMarketChange,
-      changePercent: q.regularMarketChangePercent,
-      open:          q.regularMarketOpen,
-      high:          q.regularMarketDayHigh,
-      low:           q.regularMarketDayLow,
-      prevClose:     q.regularMarketPreviousClose,
-      volume:        q.regularMarketVolume,
-      marketCap:     q.marketCap,
-      pe:            q.trailingPE,
-      week52High:    q.fiftyTwoWeekHigh,
-      week52Low:     q.fiftyTwoWeekLow,
-      currency:      q.currency,
-      sector:        q.sector,
-      industry:      q.industry,
-      fetchedAt:     new Date().toISOString(),
-    };
+    return mapQuoteShape(symbol, exchange, ticker, q);
   } catch (err) {
     logger.error(`[Yahoo] getQuote failed for ${ticker}: ${err.message}`);
     throw err;
@@ -84,37 +137,42 @@ async function getQuote(symbol, exchange = 'NSE') {
  * Returns an object keyed by original symbol.
  */
 async function getQuotes(symbols, exchange = 'NSE') {
-  const yf = await getYF();
-  if (!yf) throw new Error('yahoo-finance2 not available');
-
   const tickers = symbols.map(s => toYahooTicker(s, exchange));
+  const map = {};
+
   try {
-    const results = await yf.quote(tickers);
-    const arr = Array.isArray(results) ? results : [results];
-    const map = {};
-    arr.forEach((q, i) => {
-      const sym = symbols[i] || q.symbol;
-      map[sym] = {
-        symbol:        sym,
-        ticker:        tickers[i],
-        exchange,
-        name:          q.shortName || q.longName || sym,
-        price:         q.regularMarketPrice,
-        change:        q.regularMarketChange,
-        changePercent: q.regularMarketChangePercent,
-        open:          q.regularMarketOpen,
-        high:          q.regularMarketDayHigh,
-        low:           q.regularMarketDayLow,
-        prevClose:     q.regularMarketPreviousClose,
-        volume:        q.regularMarketVolume,
-        marketCap:     q.marketCap,
-        pe:            q.trailingPE,
-        week52High:    q.fiftyTwoWeekHigh,
-        week52Low:     q.fiftyTwoWeekLow,
-        currency:      q.currency,
-        fetchedAt:     new Date().toISOString(),
-      };
+    const byTicker = new Map();
+    for (let i = 0; i < tickers.length; i += 20) {
+      const batch = tickers.slice(i, i + 20);
+      const rows = await fetchQuotesNoCrumb(batch);
+      for (const row of rows) byTicker.set(row.symbol, row);
+    }
+
+    symbols.forEach((sym, i) => {
+      const ticker = tickers[i];
+      const row = byTicker.get(ticker);
+      if (row) map[sym] = mapQuoteShape(sym, exchange, ticker, row);
     });
+    return map;
+  } catch (err) {
+    logger.warn(`[Yahoo] no-crumb getQuotes failed, falling back: ${err.message}`);
+  }
+
+  // Fallback path
+  const yf = await getYF();
+  if (!yf || typeof yf.quote !== 'function') throw new Error('yahoo-finance2 quote not available');
+  try {
+    for (let i = 0; i < tickers.length; i += 20) {
+      const batch = tickers.slice(i, i + 20);
+      const results = await yf.quote(batch);
+      const arr = Array.isArray(results) ? results : [results];
+      arr.forEach((q, idx) => {
+        const globalIdx = i + idx;
+        const sym = symbols[globalIdx] || q.symbol;
+        const ticker = tickers[globalIdx];
+        map[sym] = mapQuoteShape(sym, exchange, ticker, q);
+      });
+    }
     return map;
   } catch (err) {
     logger.error(`[Yahoo] getQuotes failed: ${err.message}`);
@@ -131,21 +189,33 @@ async function getQuotes(symbols, exchange = 'NSE') {
  * @param {string} interval - "1d" | "1wk" | "1mo"
  */
 async function getHistory(symbol, exchange = 'NSE', period1 = '6mo', period2 = 'now', interval = '1d') {
-  const yf = await getYF();
-  if (!yf) throw new Error('yahoo-finance2 not available');
-
   const ticker = toYahooTicker(symbol, exchange);
   try {
-    const data = await yf.historical(ticker, { period1, period2, interval });
-    return data.map(d => ({
-      date:   d.date,
-      open:   d.open,
-      high:   d.high,
-      low:    d.low,
-      close:  d.close,
-      volume: d.volume,
-      adjClose: d.adjClose,
-    }));
+    const periodLike = /^[0-9]+[dwmy]$/i.test(period1);
+    const params = { interval };
+    if (periodLike) {
+      params.range = period1;
+    } else {
+      const p1 = Math.floor(new Date(period1).getTime() / 1000);
+      const p2 = period2 === 'now' ? Math.floor(Date.now() / 1000) : Math.floor(new Date(period2).getTime() / 1000);
+      params.period1 = p1;
+      params.period2 = p2;
+    }
+
+    const data = await yahooGet(`/v8/finance/chart/${encodeURIComponent(ticker)}`, params);
+    const result = data?.chart?.result?.[0];
+    const ts = result?.timestamp || [];
+    const q = result?.indicators?.quote?.[0] || {};
+    const ac = result?.indicators?.adjclose?.[0]?.adjclose || [];
+    return ts.map((t, i) => ({
+      date: new Date(t * 1000),
+      open: q.open?.[i],
+      high: q.high?.[i],
+      low: q.low?.[i],
+      close: q.close?.[i],
+      volume: q.volume?.[i],
+      adjClose: ac[i],
+    })).filter((row) => row.close != null);
   } catch (err) {
     logger.error(`[Yahoo] getHistory failed for ${ticker}: ${err.message}`);
     throw err;
@@ -157,9 +227,6 @@ async function getHistory(symbol, exchange = 'NSE', period1 = '6mo', period2 = '
  * Returns Nifty50, Sensex, Dow Jones, NASDAQ, S&P500, Gold, Crude, USD/INR
  */
 async function getMarketIndices() {
-  const yf = await getYF();
-  if (!yf) throw new Error('yahoo-finance2 not available');
-
   const indices = [
     { key: 'nifty50',   ticker: '^NSEI',   name: 'Nifty 50' },
     { key: 'sensex',    ticker: '^BSESN',  name: 'Sensex' },
@@ -178,11 +245,11 @@ async function getMarketIndices() {
   const snapshot = {};
 
   try {
-    const quotes = await yf.quote(tickers);  // yf is from getYF() above
-    const arr = Array.isArray(quotes) ? quotes : [quotes];
+    const arr = await fetchQuotesNoCrumb(tickers);
+    const byTicker = new Map(arr.map((q) => [q.symbol, q]));
 
     indices.forEach((idx, i) => {
-      const q = arr[i] || {};
+      const q = byTicker.get(idx.ticker) || arr[i] || {};
       snapshot[idx.key] = {
         name:          idx.name,
         ticker:        idx.ticker,
@@ -196,8 +263,29 @@ async function getMarketIndices() {
     snapshot.fetchedAt = new Date().toISOString();
     return snapshot;
   } catch (err) {
+    logger.warn(`[Yahoo] no-crumb getMarketIndices failed, falling back: ${err.message}`);
+  }
+
+  const yf = await getYF();
+  if (!yf || typeof yf.quote !== 'function') throw new Error('yahoo-finance2 quote not available');
+  try {
+    const quotes = await yf.quote(tickers);
+    const arr = Array.isArray(quotes) ? quotes : [quotes];
+    indices.forEach((idx, i) => {
+      const q = arr[i] || {};
+      snapshot[idx.key] = {
+        name:          idx.name,
+        ticker:        idx.ticker,
+        price:         q.regularMarketPrice,
+        change:        q.regularMarketChange,
+        changePercent: q.regularMarketChangePercent,
+        prevClose:     q.regularMarketPreviousClose,
+      };
+    });
+    snapshot.fetchedAt = new Date().toISOString();
+    return snapshot;
+  } catch (err) {
     logger.error(`[Yahoo] getMarketIndices failed: ${err.message}`);
-    // Return partial data if some failed
     return snapshot;
   }
 }
@@ -206,13 +294,15 @@ async function getMarketIndices() {
  * Search for a stock symbol by company name.
  */
 async function searchSymbol(query) {
-  const yf = await getYF();
-  if (!yf) throw new Error('yahoo-finance2 not available');
   try {
-    const results = await yf.search(query);
-    return (results.quotes || []).slice(0, 10).map(r => ({
+    const data = await yahooGet('/v1/finance/search', {
+      q: query,
+      quotesCount: 10,
+      newsCount: 0,
+    });
+    return (data?.quotes || []).slice(0, 10).map(r => ({
       symbol:   r.symbol,
-      name:     r.shortname || r.longname,
+      name:     r.shortname || r.longname || r.symbol,
       exchange: r.exchange,
       type:     r.quoteType,
     }));

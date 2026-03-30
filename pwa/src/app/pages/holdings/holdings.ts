@@ -133,7 +133,10 @@ export class HoldingsPage {
         this.load();
         alert(`Imported ${res.parsed} holdings`);
       },
-      error: () => { this.importing.set(false); this.importError.set('Import failed'); },
+      error: (err) => {
+        this.importing.set(false);
+        this.importError.set(err?.error?.error || 'Import failed');
+      },
     });
   }
 

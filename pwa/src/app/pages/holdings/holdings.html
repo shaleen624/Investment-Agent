@@ -46,9 +46,9 @@
         </button>
       } @else {
         <label class="file-drop">
-          <input type="file" accept=".csv,.pdf,.xlsx" (change)="doImportFile($event)" style="display:none">
+          <input type="file" accept="*/*" (change)="doImportFile($event)" style="display:none">
           <span class="file-icon">&#128190;</span>
-          <span>Click to upload CSV, PDF, or Excel</span>
+          <span>Click to upload any statement/export file</span>
         </label>
       }
       @if (importError()) {

@@ -16,6 +16,21 @@ try { pdfParse = require('pdf-parse'); } catch { logger.warn('[Parser] pdf-parse
 try { Papa     = require('papaparse'); } catch { logger.warn('[Parser] papaparse not installed'); }
 try { XLSX     = require('xlsx'); } catch { logger.warn('[Parser] xlsx not installed'); }
 
+function toNumber(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const cleaned = String(v).replace(/[₹,\s]/g, '').replace(/[^\d.-]/g, '');
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function pick(obj, keys = []) {
+  for (const k of keys) {
+    if (obj[k] != null && obj[k] !== '') return obj[k];
+  }
+  return null;
+}
+
 // ── Normalized holding schema ─────────────────────────────────────────────────
 //
 // {
@@ -39,33 +54,75 @@ try { XLSX     = require('xlsx'); } catch { logger.warn('[Parser] xlsx not insta
  */
 function parseExcel(filePath) {
   if (!XLSX) throw new Error('xlsx not installed');
-  
+
   const workbook = XLSX.readFile(filePath);
-  const sheetName = workbook.SheetNames[0]; // Use first sheet
-  const worksheet = workbook.Sheets[sheetName];
-  
-  // Convert to CSV-like array of objects
-  const csvData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-  if (!csvData.length) return [];
-  
-  // Convert array of arrays to array of objects (first row as headers)
-  const headers = csvData[0].map(h => h?.toString().toLowerCase() || '');
-  const data = csvData.slice(1).map(row => {
-    const obj = {};
-    headers.forEach((header, index) => {
-      obj[header] = row[index]?.toString() || '';
+  let bestRows = [];
+
+  // Some broker exports include metadata rows before actual headers.
+  // Parse all sheets and select the first table-like one with a detectable header row.
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
+    if (!rows.length) continue;
+
+    let headerIndex = -1;
+    for (let i = 0; i < Math.min(rows.length, 60); i++) {
+      const row = rows[i] || [];
+      const normalized = row
+        .map((c) => String(c || '').trim().toLowerCase())
+        .filter(Boolean);
+      if (!normalized.length) continue;
+
+      const hasNameLike = normalized.some((c) =>
+        c.includes('name') || c.includes('company') || c.includes('stock') ||
+        c.includes('symbol') || c.includes('ticker') || c.includes('isin')
+      );
+      const hasQtyLike = normalized.some((c) =>
+        c.includes('quantity') || c.includes('qty') || c.includes('units') || c.includes('shares')
+      );
+      const hasPriceLike = normalized.some((c) =>
+        c.includes('price') || c.includes('avg') || c.includes('nav') || c.includes('cost') ||
+        c.includes('invested') || c.includes('value') || c.includes('returns') || c.includes('p&l')
+      );
+
+      if (hasNameLike && hasQtyLike && hasPriceLike) {
+        headerIndex = i;
+        break;
+      }
+    }
+
+    if (headerIndex === -1) continue;
+
+    const headers = (rows[headerIndex] || []).map((h) => String(h || '').trim());
+    const dataRows = rows.slice(headerIndex + 1).filter((r) =>
+      Array.isArray(r) && r.some((c) => String(c || '').trim() !== '')
+    );
+    if (!dataRows.length) continue;
+
+    const data = dataRows.map((row) => {
+      const obj = {};
+      headers.forEach((header, index) => {
+        obj[header] = row[index]?.toString() || '';
+      });
+      return obj;
     });
-    return obj;
-  });
-  
-  // Create a mock Papa parse result
-  const mockPapaResult = {
-    data,
-    meta: { fields: headers.map(h => h.charAt(0).toUpperCase() + h.slice(1)) }
-  };
-  
-  // Use the generic CSV parser logic
-  return parseGenericCSVFromData(mockPapaResult);
+
+    if (data.length > bestRows.length) {
+      bestRows = data;
+      const mockPapaResult = {
+        data,
+        meta: { fields: headers },
+      };
+      const parsed = parseGenericCSVFromData(mockPapaResult);
+      if (parsed.length) return parsed;
+    }
+  }
+
+  if (!bestRows.length) {
+    throw new Error('Could not detect holdings table in spreadsheet');
+  }
+
+  throw new Error('Spreadsheet parsed, but no valid holdings rows were found');
 }
 
 /**
@@ -74,7 +131,6 @@ function parseExcel(filePath) {
 function parseGenericCSVFromData({ data, meta }) {
   if (!data.length) return [];
 
-  const headers = (meta.fields || []).map(h => h.toLowerCase());
   const col = name => meta.fields?.find(h => h.toLowerCase().includes(name)) || null;
 
   const symbolCol   = col('symbol') || col('ticker') || col('scrip') || col('isin');
@@ -84,10 +140,12 @@ function parseGenericCSVFromData({ data, meta }) {
   const amtCol      = col('amount') || col('investment') || col('invested') || col('value');
   const exchangeCol = col('exchange');
   const typeCol     = col('type') || col('asset');
+  const folioCol    = col('folio');
+  const isLikelyMutualFundSheet = !!(col('scheme') || col('folio') || col('amc')) && !!col('units');
 
   return data.map(row => {
     const rawType = typeCol ? (row[typeCol] || '').toLowerCase() : '';
-    let asset_type = 'other';
+    let asset_type = isLikelyMutualFundSheet ? 'mutual_fund' : 'equity';
     if (rawType.includes('equity') || rawType.includes('stock')) asset_type = 'equity';
     else if (rawType.includes('mutual') || rawType.includes('mf') || rawType.includes('fund')) asset_type = 'mutual_fund';
     else if (rawType.includes('etf')) asset_type = 'etf';
@@ -96,9 +154,12 @@ function parseGenericCSVFromData({ data, meta }) {
     else if (rawType.includes('nps')) asset_type = 'nps';
     else if (rawType.includes('crypto')) asset_type = 'crypto';
 
-    const quantity = qtyCol ? parseFloat(row[qtyCol] || '0') : 0;
-    const avg_buy_price = priceCol ? parseFloat(row[priceCol] || '0') : 0;
-    const invested_amount = amtCol ? parseFloat(row[amtCol] || '0') : (quantity * avg_buy_price);
+    const quantity = qtyCol ? toNumber(row[qtyCol]) : 0;
+    const invested_amount = amtCol ? toNumber(row[amtCol]) : 0;
+    let avg_buy_price = priceCol ? toNumber(row[priceCol]) : 0;
+    if (!avg_buy_price && quantity > 0 && invested_amount > 0) {
+      avg_buy_price = invested_amount / quantity;
+    }
 
     return {
       asset_type,
@@ -108,6 +169,9 @@ function parseGenericCSVFromData({ data, meta }) {
       quantity,
       avg_buy_price,
       invested_amount,
+      folio_number:  folioCol ? (row[folioCol] || null) : null,
+      units:         isLikelyMutualFundSheet ? quantity : null,
+      nav:           isLikelyMutualFundSheet ? avg_buy_price : null,
       broker:        'excel',
     };
   }).filter(h => h.quantity > 0 || h.invested_amount > 0);
@@ -124,9 +188,9 @@ function parseKiteCSV(text) {
     symbol:         row['Tradingsymbol']?.trim() || row['Symbol']?.trim(),
     name:           row['Instrument']?.trim()    || row['Tradingsymbol']?.trim(),
     exchange:       row['Exchange']?.trim()      || 'NSE',
-    quantity:       parseFloat(row['Quantity'])  || 0,
-    avg_buy_price:  parseFloat(row['Average price'] || row['Avg. price'] || '0') || 0,
-    invested_amount:parseFloat(row['P&L'])       || 0,
+    quantity:       toNumber(row['Quantity']),
+    avg_buy_price:  toNumber(row['Average price'] || row['Avg. price'] || '0'),
+    invested_amount:toNumber(row['P&L']),
     broker:         'kite',
   })).filter(h => h.symbol && h.quantity > 0);
 }
@@ -147,10 +211,10 @@ function parseGrowwCSV(text) {
       symbol:         row['Symbol'] || row['ISIN'] || row['Scheme Code'],
       name:           row['Company Name'] || row['Scheme Name'] || row['Name'],
       exchange:       row['Exchange'] || 'NSE',
-      quantity:       parseFloat(row['Shares'] || row['Units'] || '0') || 0,
-      avg_buy_price:  parseFloat(row['Avg. Buy Price'] || row['Buy NAV'] || '0') || 0,
-      invested_amount:parseFloat(row['Total Investment'] || row['Invested Amount'] || '0') || 0,
-      units:          parseFloat(row['Units'] || '0') || null,
+      quantity:       toNumber(row['Shares'] || row['Units'] || '0'),
+      avg_buy_price:  toNumber(row['Avg. Buy Price'] || row['Buy NAV'] || '0'),
+      invested_amount:toNumber(row['Total Investment'] || row['Invested Amount'] || '0'),
+      units:          toNumber(row['Units'] || '0') || null,
       folio_number:   row['Folio No'] || null,
       broker:         'groww',
     };
@@ -165,7 +229,6 @@ function parseGenericCSV(text) {
   const { data, meta } = Papa.parse(text, { header: true, skipEmptyLines: true });
   if (!data.length) return [];
 
-  const headers = (meta.fields || []).map(h => h.toLowerCase());
   const col = name => meta.fields?.find(h => h.toLowerCase().includes(name)) || null;
 
   const symbolCol   = col('symbol') || col('ticker') || col('scrip') || col('isin');
@@ -190,12 +253,109 @@ function parseGenericCSV(text) {
       symbol:          symbolCol ? row[symbolCol]?.trim()       : null,
       name:            nameCol   ? row[nameCol]?.trim()         : (symbolCol ? row[symbolCol]?.trim() : 'Unknown'),
       exchange:        exchangeCol ? row[exchangeCol]?.trim()   : 'NSE',
-      quantity:        qtyCol  ? parseFloat(row[qtyCol])   || 0 : 0,
-      avg_buy_price:   priceCol? parseFloat(row[priceCol]) || 0 : 0,
-      invested_amount: amtCol  ? parseFloat(row[amtCol])  || 0 : 0,
+      quantity:        qtyCol  ? toNumber(row[qtyCol])   : 0,
+      avg_buy_price:   priceCol? toNumber(row[priceCol]) : 0,
+      invested_amount: amtCol  ? toNumber(row[amtCol])   : 0,
       broker:          'manual',
     };
   }).filter(h => h.name && h.quantity > 0);
+}
+
+function parseDelimitedText(text) {
+  if (!Papa) throw new Error('papaparse not installed');
+
+  const sample = text.split(/\r?\n/).slice(0, 10).join('\n');
+  const delimiters = [',', '\t', ';', '|'];
+  let delimiter = ',';
+  let best = -1;
+  for (const d of delimiters) {
+    const score = sample.split('\n').reduce((s, line) => s + Math.max(0, line.split(d).length - 1), 0);
+    if (score > best) {
+      best = score;
+      delimiter = d;
+    }
+  }
+
+  const parsed = Papa.parse(text, {
+    header: true,
+    skipEmptyLines: true,
+    delimiter: best > 0 ? delimiter : '',
+  });
+  if (!parsed.data?.length || !(parsed.meta?.fields || []).length) return [];
+  return parseGenericCSVFromData(parsed);
+}
+
+function parseJSONPortfolio(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [];
+  }
+
+  const rows = Array.isArray(parsed)
+    ? parsed
+    : (parsed?.holdings || parsed?.portfolio || parsed?.assets || []);
+  if (!Array.isArray(rows) || !rows.length) return [];
+
+  return rows.map((row) => {
+    const rawType = String(pick(row, ['asset_type', 'assetType', 'type']) || '').toLowerCase();
+    let asset_type = 'equity';
+    if (rawType.includes('mutual')) asset_type = 'mutual_fund';
+    else if (rawType.includes('etf')) asset_type = 'etf';
+    else if (rawType.includes('bond')) asset_type = 'bond';
+    else if (rawType.includes('fd') || rawType.includes('fixed')) asset_type = 'fd';
+    else if (rawType.includes('nps')) asset_type = 'nps';
+    else if (rawType.includes('crypto')) asset_type = 'crypto';
+    else if (rawType.includes('us')) asset_type = 'us_stock';
+
+    const quantity = toNumber(pick(row, ['quantity', 'qty', 'shares', 'units']));
+    const avg_buy_price = toNumber(pick(row, ['avg_buy_price', 'avgPrice', 'buy_price', 'price', 'nav']));
+    const invested_amount = toNumber(pick(row, ['invested_amount', 'invested', 'amount', 'investment'])) || (quantity * avg_buy_price);
+    const symbol = pick(row, ['symbol', 'ticker', 'isin', 'code']);
+    const name = pick(row, ['name', 'company', 'companyName', 'instrument', 'scheme']) || symbol || 'Unknown';
+
+    return {
+      asset_type,
+      symbol: symbol ? String(symbol).trim() : null,
+      name: String(name).trim(),
+      exchange: String(pick(row, ['exchange', 'market']) || 'NSE').trim(),
+      quantity,
+      avg_buy_price,
+      invested_amount,
+      broker: 'manual',
+    };
+  }).filter(h => h.name && (h.quantity > 0 || h.invested_amount > 0));
+}
+
+function sanitizeText(buffer) {
+  return buffer
+    .toString('utf8')
+    .replace(/\u0000/g, '')
+    .replace(/\r\n/g, '\n')
+    .trim();
+}
+
+function detectType(buffer, filePath, originalName = '', mimeType = '') {
+  const byName = path.extname(originalName || filePath).toLowerCase();
+  const byPath = path.extname(filePath).toLowerCase();
+  const ext = byName || byPath;
+
+  const head = buffer.subarray(0, 12).toString('ascii');
+  if (head.startsWith('%PDF')) return { ext: '.pdf', kind: 'pdf' };
+
+  if (ext === '.pdf') return { ext, kind: 'pdf' };
+  if (['.xlsx', '.xls', '.xlsm', '.xlsb', '.ods'].includes(ext)) return { ext, kind: 'excel' };
+  if (['.csv', '.tsv'].includes(ext)) return { ext, kind: 'delimited' };
+  if (ext === '.json') return { ext, kind: 'json' };
+  if (ext === '.txt' || ext === '.text' || ext === '.md' || ext === '.log') return { ext, kind: 'text' };
+
+  if ((mimeType || '').includes('sheet') || (mimeType || '').includes('excel')) return { ext, kind: 'excel' };
+  if ((mimeType || '').includes('csv')) return { ext, kind: 'delimited' };
+  if ((mimeType || '').includes('json')) return { ext, kind: 'json' };
+  if ((mimeType || '').includes('text')) return { ext, kind: 'text' };
+
+  return { ext, kind: 'unknown' };
 }
 
 // ── PDF Parser ────────────────────────────────────────────────────────────────
@@ -360,33 +520,67 @@ function parseText(text) {
 
 /**
  * Detect file type and parse accordingly.
- * @param {string} filePath - path to PDF or CSV file
+ * @param {string} filePath - uploaded file path
+ * @param {{ originalName?: string, mimeType?: string }} options
  * @returns {Promise<Array>} normalized holdings
  */
-async function parseFile(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  const content = ext !== '.pdf' ? fs.readFileSync(filePath, 'utf8') : null;
+async function parseFile(filePath, options = {}) {
+  const { originalName = '', mimeType = '' } = options;
+  const buffer = fs.readFileSync(filePath);
+  const detected = detectType(buffer, filePath, originalName, mimeType);
 
-  if (ext === '.pdf') {
-    return parsePDF(filePath);
+  const tried = [];
+  const tryParser = async (name, fn) => {
+    tried.push(name);
+    try {
+      const holdings = await fn();
+      if (Array.isArray(holdings) && holdings.length) return holdings;
+    } catch (err) {
+      logger.debug(`[Parser] ${name} failed: ${err.message}`);
+    }
+    return null;
+  };
+
+  if (detected.kind === 'pdf') {
+    const pdfHoldings = await tryParser('pdf', () => parsePDF(filePath));
+    if (pdfHoldings) return pdfHoldings;
   }
 
-  if (ext === '.xlsx' || ext === '.xls') {
-    return parseExcel(filePath);
+  if (detected.kind === 'excel' || detected.kind === 'unknown') {
+    const excelHoldings = await tryParser('excel', () => parseExcel(filePath));
+    if (excelHoldings) return excelHoldings;
   }
 
-  if (ext === '.csv') {
-    // Detect format from header
-    if (content.includes('Tradingsymbol') || content.includes('Average price')) return parseKiteCSV(content);
-    if (content.includes('Scheme Name')   || content.includes('Folio No'))      return parseGrowwCSV(content);
-    return parseGenericCSV(content);
+  const text = sanitizeText(buffer);
+  if (text) {
+    if (detected.kind === 'json' || detected.kind === 'unknown') {
+      const jsonHoldings = await tryParser('json', () => parseJSONPortfolio(text));
+      if (jsonHoldings) return jsonHoldings;
+    }
+
+    if (detected.kind === 'delimited' || detected.kind === 'text' || detected.kind === 'unknown') {
+      const kite = await tryParser('kite_csv', () =>
+        (text.includes('Tradingsymbol') || text.includes('Average price')) ? parseKiteCSV(text) : []
+      );
+      if (kite) return kite;
+
+      const groww = await tryParser('groww_csv', () =>
+        (text.includes('Scheme Name') || text.includes('Folio No')) ? parseGrowwCSV(text) : []
+      );
+      if (groww) return groww;
+
+      const delimited = await tryParser('delimited', () => parseDelimitedText(text));
+      if (delimited) return delimited;
+
+      const plainText = await tryParser('plain_text', () => parseText(text));
+      if (plainText) return plainText;
+    }
   }
 
-  if (ext === '.txt' || ext === '.text' || ext === '') {
-    return parseText(content);
-  }
-
-  throw new Error(`Unsupported file type: ${ext}`);
+  throw new Error(
+    `Unsupported or unreadable file format${detected.ext ? ` (${detected.ext})` : ''}. `
+    + `Tried: ${tried.join(', ')}`
+  );
 }
 
 module.exports = { parseFile, parseText, parseKiteCSV, parseGrowwCSV, parseGenericCSV, parseExcel, parsePDF };

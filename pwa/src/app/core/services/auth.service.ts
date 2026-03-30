@@ -14,6 +14,14 @@ export class AuthService {
 
   constructor() { }
 
+  private extractApiError(err: any, fallback: string) {
+    if (!err) return fallback;
+    if (typeof err.error === 'string' && err.error.trim()) return err.error;
+    if (err.error?.error) return err.error.error;
+    if (err.message) return err.message;
+    return fallback;
+  }
+
   async checkAuth() {
     const token = localStorage.getItem('auth_token');
     if (!token) {
@@ -42,7 +50,7 @@ export class AuthService {
       this.router.navigate(['/dashboard']);
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: err.error?.error || 'Login failed' };
+      return { success: false, error: this.extractApiError(err, 'Login failed') };
     }
   }
 
@@ -54,7 +62,7 @@ export class AuthService {
       this.router.navigate(['/dashboard']);
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: err.error?.error || 'Registration failed' };
+      return { success: false, error: this.extractApiError(err, 'Registration failed') };
     }
   }
 
@@ -63,6 +71,6 @@ export class AuthService {
     this.userSignal.set(null);
     this.router.navigate(['/login']);
     // Call API logout but don't wait for it
-    this.api.logout().subscribe();
+    this.api.logout().subscribe({ error: () => {} });
   }
 }

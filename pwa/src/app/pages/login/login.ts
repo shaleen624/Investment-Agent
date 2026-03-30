@@ -24,12 +24,15 @@ export class LoginPage {
   }
 
   async onSubmit() {
-    if (!this.username() || !this.password()) {
+    const username = this.username().trim();
+    const password = this.password();
+
+    if (!username || !password) {
       this.error.set('Please enter username and password');
       return;
     }
 
-    if (!this.isLoginMode() && this.password().length < 6) {
+    if (!this.isLoginMode() && password.length < 6) {
       this.error.set('Password must be at least 6 characters');
       return;
     }
@@ -37,9 +40,9 @@ export class LoginPage {
     this.loading.set(true);
     this.error.set(null);
 
-    const result = this.isLoginMode() 
-      ? await this.auth.login(this.username(), this.password())
-      : await this.auth.register(this.username(), this.password());
+    const result = this.isLoginMode()
+      ? await this.auth.login(username, password)
+      : await this.auth.register(username, password);
 
     if (!result.success) {
       this.error.set(result.error || (this.isLoginMode() ? 'Login failed' : 'Registration failed'));

@@ -10,14 +10,22 @@ const { authenticateToken } = require('../middleware/auth');
 
 const r = Router();
 
-// File upload (PDF/CSV imports)
-const upload = multer({
-  dest: path.resolve(process.env.UPLOADS_PATH || './uploads'),
-  limits: { fileSize: 20 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const ok = ['.pdf', '.csv', '.txt', '.xlsx', '.xls'].includes(path.extname(file.originalname).toLowerCase());
-    cb(ok ? null : new Error('Only PDF, CSV, TXT files allowed'), ok);
+// File upload (portfolio imports)
+const uploadDir = path.resolve(process.env.UPLOADS_PATH || './uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const safeExt = ext && ext.length <= 10 ? ext : '';
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`);
   },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 },
 });
 
 // GET /api/portfolio/summary
@@ -91,8 +99,23 @@ r.post('/import/text', authenticateToken, async (req, res) => {
 // POST /api/portfolio/import/file  (PDF/CSV upload)
 r.post('/import/file', authenticateToken, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  if (!req.file.size) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({
+      error: 'Uploaded file is empty. Please attach a valid statement/export file.',
+    });
+  }
   try {
-    const holdings = await parser.parseFile(req.file.path);
+    const holdings = await parser.parseFile(req.file.path, {
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+    });
+    if (!holdings.length) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(422).json({
+        error: 'Could not detect holdings in this file. Use a statement/export with symbol/name, quantity/units, and buy price/NAV.',
+      });
+    }
     const userHoldings = holdings.map(h => ({ ...h, user_id: req.user.id }));
     const result   = pm.upsertHoldings(userHoldings);
     fs.unlink(req.file.path, () => {});

@@ -119,8 +119,12 @@ async function start() {
 
   // 4. Start Telegram bot (if configured)
   if (config.notifications.telegram.enabled) {
-    telegram.startBot(getTelegramHandlers());
-    logger.info('[Agent] Telegram bot started');
+    const started = await telegram.startBot(getTelegramHandlers());
+    if (started) {
+      logger.info('[Agent] Telegram bot started');
+    } else {
+      logger.warn('[Agent] Telegram bot unavailable; continuing without Telegram commands');
+    }
   } else {
     logger.info('[Agent] Telegram not configured — bot not started');
   }

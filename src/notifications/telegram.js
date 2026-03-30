@@ -16,6 +16,7 @@ const { config } = require('../config');
 
 let bot;
 let isBotRunning = false;
+let launchPromise = null;
 
 function getBot() {
   if (bot) return bot;
@@ -77,7 +78,7 @@ async function sendBrief(content, type = 'morning') {
 function startBot(handlers = {}) {
   if (!config.notifications.telegram.token) {
     logger.warn('[Telegram] Bot token not set — skipping bot start');
-    return;
+    return Promise.resolve(false);
   }
 
   const b = getBot();
@@ -116,13 +117,25 @@ function startBot(handlers = {}) {
     ctx.reply('⚠️ Something went wrong. Check agent logs.').catch(() => {});
   });
 
-  b.launch({ dropPendingUpdates: true });
-  isBotRunning = true;
-  logger.info('[Telegram] Bot started and listening for commands');
+  launchPromise = b.launch({ dropPendingUpdates: true })
+    .then(() => {
+      isBotRunning = true;
+      logger.info('[Telegram] Bot started and listening for commands');
+    })
+    .catch((err) => {
+      isBotRunning = false;
+      logger.error(`[Telegram] Bot startup failed: ${err.message}`);
+    });
 
   // Graceful stop
-  process.once('SIGINT',  () => b.stop('SIGINT'));
-  process.once('SIGTERM', () => b.stop('SIGTERM'));
+  process.once('SIGINT',  () => {
+    if (isBotRunning) b.stop('SIGINT');
+  });
+  process.once('SIGTERM', () => {
+    if (isBotRunning) b.stop('SIGTERM');
+  });
+
+  return launchPromise.then(() => isBotRunning);
 }
 
 function stopBot() {

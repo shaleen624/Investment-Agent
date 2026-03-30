@@ -9,6 +9,20 @@ const chalk    = require('chalk');
 const pm       = require('../portfolio/manager');
 const llm      = require('../llm/provider');
 const prompts  = require('../llm/prompts');
+const { config } = require('../config');
+
+function llmSetupHint() {
+  if (config.llm.provider === 'deepseek' || config.llm.provider === 'kimi') {
+    return 'Set NVIDIA_API_KEY in .env';
+  }
+  if (config.llm.provider === 'claude') {
+    return 'Set ANTHROPIC_API_KEY in .env';
+  }
+  if (config.llm.provider === 'openai') {
+    return 'Set OPENAI_API_KEY in .env';
+  }
+  return 'Set LLM_PROVIDER and matching API key in .env';
+}
 
 async function goalsCLI() {
   while (true) {
@@ -208,7 +222,7 @@ async function editGoal(goal) {
 
 async function suggestGoals() {
   if (!llm.isAvailable()) {
-    console.log(chalk.yellow('\n⚠ LLM not configured. Set ANTHROPIC_API_KEY to use this feature.\n'));
+    console.log(chalk.yellow(`\n⚠ LLM not configured. ${llmSetupHint()} to use this feature.\n`));
     return;
   }
 

@@ -32,6 +32,20 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ── Legacy User Profile (single-row settings used by scheduler/settings API) ──
+CREATE TABLE IF NOT EXISTS user_profile (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  name          TEXT    NOT NULL DEFAULT 'Investor',
+  email         TEXT,
+  telegram_id   TEXT,
+  whatsapp      TEXT,
+  timezone      TEXT    NOT NULL DEFAULT 'Asia/Kolkata',
+  morning_time  TEXT    NOT NULL DEFAULT '08:00',
+  evening_time  TEXT    NOT NULL DEFAULT '20:00',
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ── Investment Goals ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS goals (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,

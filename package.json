@@ -7,7 +7,8 @@
     "start": "concurrently -n agent,pwa -c cyan,magenta \"node index.js\" \"npm start --prefix pwa\"",
     "start:agent": "node index.js",
     "start:pwa": "npm start --prefix pwa",
-    "dev": "concurrently -n agent,pwa -c cyan,magenta \"node --watch index.js\" \"npm start --prefix pwa\"",
+    "dev": "concurrently -n agent,pwa -c cyan,magenta \"node index.js\" \"npm start --prefix pwa\"",
+    "dev:watch": "concurrently -n agent,pwa -c cyan,magenta \"node --watch index.js\" \"npm start --prefix pwa\"",
     "setup": "node index.js setup",
     "portfolio": "node index.js portfolio",
     "goals": "node index.js goals",
@@ -16,6 +17,7 @@
     "analyze": "node index.js analyze",
     "status": "node index.js status",
     "notify:test": "node index.js notify test",
+    "test:endpoints": "node scripts/smoke-endpoints.js",
     "install:all": "npm install && npm install --prefix pwa",
     "rebuild": "PUPPETEER_SKIP_DOWNLOAD=true npm rebuild"
   },

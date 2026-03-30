@@ -18,6 +18,28 @@ const news      = require('../sources/news');
 const portfolio = require('../portfolio/manager');
 const llm       = require('../llm/provider');
 const prompts   = require('../llm/prompts');
+const { config } = require('../config');
+
+function llmSetupHint() {
+  if (config.llm.provider === 'deepseek' || config.llm.provider === 'kimi') {
+    return 'Set NVIDIA_API_KEY in .env to enable AI-powered insights.';
+  }
+  if (config.llm.provider === 'claude') {
+    return 'Set ANTHROPIC_API_KEY in .env to enable AI-powered insights.';
+  }
+  if (config.llm.provider === 'openai') {
+    return 'Set OPENAI_API_KEY in .env to enable AI-powered insights.';
+  }
+  return 'Set LLM_PROVIDER and the matching API key in .env to enable AI-powered insights.';
+}
+
+function withTimeout(promise, ms, label = 'operation') {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
 
 // ── News Sentiment Scoring ────────────────────────────────────────────────────
 
@@ -47,7 +69,11 @@ async function scoreNews() {
 
   try {
     const prompt   = prompts.newsSentimentPrompt(unscoredArticles, symbols);
-    const response = await llm.chat(prompt, { maxTokens: 1500 });
+    const response = await withTimeout(
+      llm.chat(prompt, { maxTokens: 1500 }),
+      15000,
+      'News sentiment LLM call'
+    );
     const scored   = llm.extractJSON(response);
 
     if (Array.isArray(scored)) {
@@ -127,7 +153,11 @@ async function generateMorningBrief(userId = null) {
   });
 
   try {
-    const content = await llm.chat(prompt, { maxTokens: 3000 });
+    const content = await withTimeout(
+      llm.chat(prompt, { maxTokens: 3000 }),
+      25000,
+      'Morning brief LLM call'
+    );
     const summary = content.slice(0, 800); // first ~800 chars as summary
     const briefId = saveBrief('morning', content, summary, snapshot, userId);
 
@@ -188,7 +218,11 @@ async function generateEveningBrief(userId = null) {
   });
 
   try {
-    const content = await llm.chat(prompt, { maxTokens: 3500 });
+    const content = await withTimeout(
+      llm.chat(prompt, { maxTokens: 3500 }),
+      30000,
+      'Evening brief LLM call'
+    );
     const summary = content.slice(0, 800);
     const briefId = saveBrief('evening', content, summary, snapshot, userId);
 
@@ -217,11 +251,15 @@ async function analyzePortfolio() {
   const snapshot         = market.getLatestSnapshot();
 
   if (!llm.isAvailable()) {
-    return 'LLM not configured. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY.';
+    return `LLM not configured. ${llmSetupHint()}`;
   }
 
   const prompt   = prompts.portfolioAnalysisPrompt({ portfolio: portfolioSummary, market: snapshot, goals });
-  const analysis = await llm.chat(prompt, { maxTokens: 4000 });
+  const analysis = await withTimeout(
+    llm.chat(prompt, { maxTokens: 4000 }),
+    30000,
+    'Portfolio analysis LLM call'
+  );
   return analysis;
 }
 
@@ -302,7 +340,11 @@ Return a JSON array. Return [] if no specific recommendations found.`,
   };
 
   try {
-    const response = await llm.chat(extractPrompt, { maxTokens: 1500 });
+    const response = await withTimeout(
+      llm.chat(extractPrompt, { maxTokens: 1500 }),
+      15000,
+      'Recommendation extraction LLM call'
+    );
     const recs     = llm.extractJSON(response);
 
     if (!Array.isArray(recs)) return;
@@ -367,7 +409,7 @@ function generateFallbackMorningBrief(summary, snapshot, newsItems, goals) {
     lines.push('');
   }
 
-  lines.push('> *LLM analysis not available. Configure ANTHROPIC_API_KEY for AI-powered insights.*');
+  lines.push(`> *LLM analysis not available. ${llmSetupHint()}*`);
   return lines.join('\n');
 }
 
@@ -403,7 +445,7 @@ function generateFallbackEveningBrief(summary, snapshot, newsItems, goals) {
     lines.push('');
   }
 
-  lines.push('> *LLM analysis not available. Configure ANTHROPIC_API_KEY for AI-powered insights.*');
+  lines.push(`> *LLM analysis not available. ${llmSetupHint()}*`);
   return lines.join('\n');
 }
 

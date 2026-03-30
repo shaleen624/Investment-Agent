@@ -280,11 +280,30 @@ function deleteGoal(id, userId) {
 
 // ── User Profile ──────────────────────────────────────────────────────────────
 
+function ensureUserProfileTable() {
+  run(
+    `CREATE TABLE IF NOT EXISTS user_profile (
+       id            INTEGER PRIMARY KEY CHECK (id = 1),
+       name          TEXT    NOT NULL DEFAULT 'Investor',
+       email         TEXT,
+       telegram_id   TEXT,
+       whatsapp      TEXT,
+       timezone      TEXT    NOT NULL DEFAULT 'Asia/Kolkata',
+       morning_time  TEXT    NOT NULL DEFAULT '08:00',
+       evening_time  TEXT    NOT NULL DEFAULT '20:00',
+       created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+       updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+     )`
+  );
+}
+
 function getProfile() {
+  ensureUserProfileTable();
   return dbGet(`SELECT * FROM user_profile WHERE id = 1`);
 }
 
 function upsertProfile(profile) {
+  ensureUserProfileTable();
   const existing = getProfile();
   if (existing) {
     run(

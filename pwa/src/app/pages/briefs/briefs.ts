@@ -48,9 +48,14 @@ export class BriefsPage {
   }
 
   selectBrief(b: Brief) {
-    this.selected.set(b);
+    this.selected.set({ ...b, content: b.content || '' });
     this.recs.set([]);
     this.recsLoading.set(true);
+
+    this.api.brief(b.id).pipe(catchError(() => of(null))).subscribe(full => {
+      if (full) this.selected.set(full);
+    });
+
     this.api.briefRecommendations(b.id).pipe(catchError(() => of([]))).subscribe(r => {
       this.recs.set(r);
       this.recsLoading.set(false);
@@ -69,9 +74,12 @@ export class BriefsPage {
     });
   }
 
-  renderMarkdown(md: string): string {
+  renderMarkdown(md?: string | null): string {
+    const text = (md || '').toString();
+    if (!text.trim()) return '<p class="muted">No brief content available.</p>';
+
     // Simple markdown → HTML (no dependency)
-    return md
+    return text
       .replace(/^### (.+)$/gm,   '<h3>$1</h3>')
       .replace(/^## (.+)$/gm,    '<h2>$1</h2>')
       .replace(/^# (.+)$/gm,     '<h1>$1</h1>')

@@ -115,13 +115,15 @@ async function captureMarketSnapshot() {
     const indices = await yahoo.getMarketIndices();
     const today   = new Date().toISOString().slice(0, 10);
     const time    = new Date().toTimeString().slice(0, 5);
+    const firstUser = dbGet(`SELECT id FROM users ORDER BY id ASC LIMIT 1`);
 
     run(
       `INSERT INTO market_snapshots
-         (date, time, nifty50, sensex, nifty_bank, nifty_mid,
+         (user_id, date, time, nifty50, sensex, nifty_bank, nifty_mid,
           dow_jones, nasdaq, sp500, gold_mcx, crude_mcx, usd_inr, vix, raw_data)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        firstUser?.id || null,
         today, time,
         indices.nifty50?.price,
         indices.sensex?.price,

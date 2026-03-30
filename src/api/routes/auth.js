@@ -160,7 +160,8 @@ router.get('/verify', async (req, res) => {
 
     // Check if session exists and is not expired
     const session = db.prepare(
-      'SELECT id FROM user_sessions WHERE token = ? AND expires_at > datetime("now")',
+      `SELECT id FROM user_sessions
+       WHERE token = ? AND expires_at > datetime('now')`,
     ).get(token);
 
     if (!session) {

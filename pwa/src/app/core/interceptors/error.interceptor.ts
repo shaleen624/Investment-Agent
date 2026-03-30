@@ -13,7 +13,18 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
         localStorage.removeItem('auth_token');
         router.navigate(['/login']);
       }
-      console.error('[HTTP]', req.url, err.status, err.error?.error || err.message);
+
+      // This 404 is expected on fresh installs before first market snapshot exists.
+      const isExpectedSnapshot404 =
+        err.status === 404 &&
+        req.url.includes('/api/market/snapshot') &&
+        typeof err.error?.error === 'string' &&
+        err.error.error.includes('No snapshot yet');
+
+      if (!isExpectedSnapshot404) {
+        console.error('[HTTP]', req.url, err.status, err.error?.error || err.message);
+      }
+
       return throwError(() => err);
     })
   );

@@ -128,8 +128,14 @@ r.post('/import/file', authenticateToken, upload.single('file'), async (req, res
 
 // POST /api/portfolio/prices/refresh
 r.post('/prices/refresh', async (_req, res) => {
-  const result = await market.updateAllPrices();
-  res.json(result);
+  try {
+    const timeout = new Promise((_, rej) =>
+      setTimeout(() => rej(new Error('Price refresh timed out after 60s')), 60000));
+    const result = await Promise.race([market.updateAllPrices(), timeout]);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/portfolio/sync/:broker

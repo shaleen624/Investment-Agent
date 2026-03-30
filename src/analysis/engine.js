@@ -139,7 +139,7 @@ async function generateMorningBrief(userId = null) {
   // 5. Check if LLM available
   if (!llm.isAvailable()) {
     const fallback = generateFallbackMorningBrief(portfolioSummary, snapshot, topNews, goals);
-    const briefId  = saveBrief('morning', fallback, null);
+    const briefId  = saveBrief('morning', fallback, null, snapshot, userId);
     return { content: fallback, briefId };
   }
 
@@ -234,7 +234,7 @@ async function generateEveningBrief(userId = null) {
   } catch (err) {
     logger.error(`[Analysis] Evening brief LLM failed: ${err.message}`);
     const fallback = generateFallbackEveningBrief(portfolioSummary, snapshot, topNews, goals);
-    const briefId  = saveBrief('evening', fallback, null, snapshot);
+    const briefId  = saveBrief('evening', fallback, null, snapshot, userId);
     return { content: fallback, briefId };
   }
 }

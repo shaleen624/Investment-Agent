@@ -22,6 +22,8 @@ function getNvidiaClient() {
   _nvidiaClient = new OpenAI({
     apiKey:  config.llm.nvidia.apiKey,
     baseURL: NVIDIA_BASE_URL,
+    timeout: 60000,       // 60 s connection timeout
+    maxRetries: 1,        // 1 retry on transient failures
   });
   return _nvidiaClient;
 }
@@ -38,16 +40,23 @@ function getNvidiaClient() {
 async function chatWithKimi(messages, options = {}) {
   const client = getNvidiaClient();
 
-  const response = await client.chat.completions.create({
-    model:      options.model     || config.llm.nvidia.kimiModel,
-    messages,
-    max_tokens: options.maxTokens || 16384,
-    temperature:options.temperature ?? 1.0,
-    top_p:      options.topP      ?? 1.0,
-    stream:     false,
-  });
+  try {
+    const response = await client.chat.completions.create({
+      model:      options.model     || config.llm.nvidia.kimiModel,
+      messages,
+      max_tokens: options.maxTokens || 16384,
+      temperature:options.temperature ?? 1.0,
+      top_p:      options.topP      ?? 1.0,
+      stream:     false,
+    });
 
-  return response.choices?.[0]?.message?.content || '';
+    const content = response.choices?.[0]?.message?.content || '';
+    if (!content.trim()) throw new Error('Kimi returned empty response');
+    return content;
+  } catch (err) {
+    logger.error(`[Kimi] API error: ${err.message}`);
+    throw new Error(`Kimi API error: ${err.message}`);
+  }
 }
 
 // ── DeepSeek V3 ───────────────────────────────────────────────────────────────
@@ -66,37 +75,67 @@ async function chatWithKimi(messages, options = {}) {
 async function chatWithDeepSeek(messages, options = {}) {
   const client  = getNvidiaClient();
   const thinking = options.thinking !== false; // enabled by default
+  const STREAM_TIMEOUT_MS = 45000; // 45s max for streaming
 
-  const stream = await client.chat.completions.create({
-    model:      options.model     || config.llm.nvidia.deepseekModel,
-    messages,
-    max_tokens: options.maxTokens || 8192,
-    temperature:options.temperature ?? 1.0,
-    top_p:      options.topP      ?? 0.95,
-    stream:     true,
-    extra_body: thinking
-      ? { chat_template_kwargs: { thinking: true } }
-      : undefined,
-  });
+  let stream;
+  try {
+    stream = await client.chat.completions.create({
+      model:      options.model     || config.llm.nvidia.deepseekModel,
+      messages,
+      max_tokens: options.maxTokens || 8192,
+      temperature:options.temperature ?? 1.0,
+      top_p:      options.topP      ?? 0.95,
+      stream:     true,
+      extra_body: thinking
+        ? { chat_template_kwargs: { thinking: true } }
+        : undefined,
+    });
+  } catch (err) {
+    logger.error(`[DeepSeek] Stream creation failed: ${err.message}`);
+    throw new Error(`DeepSeek API error: ${err.message}`);
+  }
 
   let reasoningBuf = '';
   let contentBuf   = '';
 
-  for await (const chunk of stream) {
-    if (!chunk.choices?.length) continue;
+  // Guard against hanging streams
+  const streamPromise = (async () => {
+    for await (const chunk of stream) {
+      if (!chunk.choices?.length) continue;
 
-    const delta = chunk.choices[0].delta;
+      const delta = chunk.choices[0].delta;
 
-    // Reasoning / chain-of-thought (only present when thinking=true)
-    const reasoning = delta?.reasoning_content;
-    if (reasoning) reasoningBuf += reasoning;
+      // Reasoning / chain-of-thought (only present when thinking=true)
+      const reasoning = delta?.reasoning_content;
+      if (reasoning) reasoningBuf += reasoning;
 
-    // Final answer content
-    if (delta?.content) contentBuf += delta.content;
+      // Final answer content
+      if (delta?.content) contentBuf += delta.content;
+    }
+  })();
+
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('DeepSeek stream timed out')), STREAM_TIMEOUT_MS);
+  });
+
+  try {
+    await Promise.race([streamPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (reasoningBuf) {
     logger.debug(`[DeepSeek] Reasoning (${reasoningBuf.length} chars): ${reasoningBuf.slice(0, 300)}…`);
+  }
+
+  if (!contentBuf.trim()) {
+    // Sometimes DeepSeek returns everything in reasoning with no content
+    if (reasoningBuf.trim()) {
+      logger.warn('[DeepSeek] No content returned, falling back to reasoning output');
+      return reasoningBuf;
+    }
+    throw new Error('DeepSeek returned empty response');
   }
 
   return contentBuf;

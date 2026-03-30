@@ -59,16 +59,28 @@ r.get('/:id', (req, res) => {
 r.post('/generate', async (req, res) => {
   const type   = req.body.type || 'morning';
   const send   = req.body.send !== false;
+  const TIMEOUT_MS = 90000; // 90s — allows LLM, market, news calls
   try {
     const userId = req.user.id;
-    const { content, briefId } = type === 'morning'
-      ? await analysis.generateMorningBrief(userId)
-      : await analysis.generateEveningBrief(userId);
+    const timeout = new Promise((_, rej) =>
+      setTimeout(() => rej(new Error(`Brief generation timed out after ${TIMEOUT_MS / 1000}s`)), TIMEOUT_MS));
+
+    const { content, briefId } = await Promise.race([
+      type === 'morning'
+        ? analysis.generateMorningBrief(userId)
+        : analysis.generateEveningBrief(userId),
+      timeout,
+    ]);
 
     let sent = [];
     if (send) {
-      sent = await notify.sendBriefToAll(content, type, briefId);
-      analysis.markBriefSent(briefId, sent);
+      try {
+        sent = await notify.sendBriefToAll(content, type, briefId);
+        analysis.markBriefSent(briefId, sent);
+      } catch (notifyErr) {
+        // Don't fail the whole request if notification fails
+        sent = [];
+      }
     }
     res.json({ briefId, type, sent, preview: content.slice(0, 500) });
   } catch (err) {

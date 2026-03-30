@@ -8,6 +8,7 @@ const llm      = require('../../llm/provider');
 const r = Router();
 
 r.get('/', (_req, res) => {
+  try {
   const summary    = pm.getPortfolioSummary();
   const goals      = pm.getGoals();
   const profile    = pm.getProfile();
@@ -43,6 +44,9 @@ r.get('/', (_req, res) => {
       lastEvening: lastEven?.date || null,
     },
   });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to fetch status' });
+  }
 });
 
 module.exports = r;

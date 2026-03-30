@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS briefs (
 -- ── Market Snapshots ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS market_snapshots (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id         INTEGER REFERENCES users(id) ON DELETE CASCADE,
   date            TEXT    NOT NULL,
   time            TEXT    NOT NULL,
   nifty50         REAL,

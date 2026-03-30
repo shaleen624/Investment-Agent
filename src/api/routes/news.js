@@ -25,7 +25,9 @@ r.post('/fetch', async (req, res) => {
     const symbols = symbol
       ? [symbol]
       : pm.getAllHoldings().map(h => h.symbol).filter(Boolean);
-    const articles = await newsAgg.fetchAndCache(symbols);
+    const timeout = new Promise((_, rej) =>
+      setTimeout(() => rej(new Error('News fetch timed out after 30s')), 30000));
+    const articles = await Promise.race([newsAgg.fetchAndCache(symbols), timeout]);
     res.json({ fetched: articles.length });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -8,16 +8,28 @@ const r = Router();
 
 // POST /api/notifications/test
 r.post('/test', async (_req, res) => {
-  const results = await notify.testChannels();
-  res.json(results);
+  try {
+    const timeout = new Promise((_, rej) =>
+      setTimeout(() => rej(new Error('Notification test timed out after 15s')), 15000));
+    const results = await Promise.race([notify.testChannels(), timeout]);
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/notifications/alert  { message: string }
 r.post('/alert', async (req, res) => {
   const { message } = req.body;
   if (!message) return res.status(400).json({ error: 'message required' });
-  const results = await notify.sendAlert(message);
-  res.json(results);
+  try {
+    const timeout = new Promise((_, rej) =>
+      setTimeout(() => rej(new Error('Alert send timed out after 15s')), 15000));
+    const results = await Promise.race([notify.sendAlert(message), timeout]);
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/notifications/log?limit=50

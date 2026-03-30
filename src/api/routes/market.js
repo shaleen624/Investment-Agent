@@ -13,7 +13,9 @@ r.get('/snapshot', async (_req, res) => {
 
     // Lazy-load snapshot on first request, and refresh once per IST day.
     if (!snap || snap.date !== today) {
-      await market.captureMarketSnapshot();
+      const timeout = new Promise((_, rej) =>
+        setTimeout(() => rej(new Error('Snapshot fetch timed out')), 20000));
+      await Promise.race([market.captureMarketSnapshot(), timeout]).catch(() => {});
       snap = market.getLatestSnapshot();
     }
 
@@ -48,7 +50,9 @@ r.get('/snapshots', (req, res) => {
 // POST /api/market/refresh  — live fetch + store snapshot
 r.post('/refresh', async (_req, res) => {
   try {
-    const snap = await market.captureMarketSnapshot();
+    const timeout = new Promise((_, rej) =>
+      setTimeout(() => rej(new Error('Market refresh timed out after 30s')), 30000));
+    const snap = await Promise.race([market.captureMarketSnapshot(), timeout]);
     res.json(snap);
   } catch (err) {
     res.status(500).json({ error: err.message });

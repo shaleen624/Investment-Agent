@@ -127,7 +127,8 @@ async function chat(prompt, options = {}) {
         return chat(prompt, { ...options, provider: next, _isFallback: true });
       }
     }
-    throw err;
+    logger.error(`[LLM] All providers exhausted. Last error (${provider}): ${err.message}`);
+    throw new Error(`LLM request failed (${provider}): ${err.message}`);
   }
 }
 

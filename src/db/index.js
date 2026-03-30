@@ -38,6 +38,31 @@ function getDb() {
   // Apply schema
   _db.exec(SCHEMA);
 
+  // ── Migrations ──────────────────────────────────────────────────────────────
+  // market_snapshots.user_id was NOT NULL but snapshots are global; make nullable
+  try {
+    const colInfo = _db.pragma('table_info(market_snapshots)');
+    const uidCol = colInfo.find(c => c.name === 'user_id');
+    if (uidCol && uidCol.notnull === 1) {
+      _db.exec(`
+        CREATE TABLE IF NOT EXISTS _ms_tmp AS SELECT * FROM market_snapshots;
+        DROP TABLE IF EXISTS market_snapshots;
+        CREATE TABLE market_snapshots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          date TEXT NOT NULL, time TEXT NOT NULL,
+          nifty50 REAL, sensex REAL, nifty_bank REAL, nifty_mid REAL,
+          dow_jones REAL, nasdaq REAL, sp500 REAL, gold_mcx REAL,
+          crude_mcx REAL, usd_inr REAL, vix REAL,
+          raw_data TEXT DEFAULT '{}',
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO market_snapshots SELECT * FROM _ms_tmp;
+        DROP TABLE _ms_tmp;
+      `);
+    }
+  } catch {}
+
   return _db;
 }
 

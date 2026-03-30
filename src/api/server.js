@@ -74,8 +74,10 @@ if (existsSync(pwaDistPath)) {
 // ── Error handler ─────────────────────────────────────────────────────────────
 
 app.use((err, _req, res, _next) => {
+  if (res.headersSent) return;
+  const status = err.status || err.statusCode || 500;
   logger.error(`[API] Unhandled error: ${err.message}`);
-  res.status(500).json({ error: err.message });
+  res.status(status).json({ error: err.message || 'Internal server error' });
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

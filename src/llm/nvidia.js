@@ -40,22 +40,31 @@ function getNvidiaClient() {
 async function chatWithKimi(messages, options = {}) {
   const client = getNvidiaClient();
 
+  const model     = options.model     || config.llm.nvidia.kimiModel;
+  const maxTokens = options.maxTokens || 16384;
+
+  logger.debug(`[Kimi] Request → model=${model} max_tokens=${maxTokens} messages=${messages.length}`);
+
   try {
     const response = await client.chat.completions.create({
-      model:      options.model     || config.llm.nvidia.kimiModel,
+      model,
       messages,
-      max_tokens: options.maxTokens || 16384,
-      temperature:options.temperature ?? 1.0,
-      top_p:      options.topP      ?? 1.0,
-      stream:     false,
+      max_tokens:  maxTokens,
+      temperature: options.temperature ?? 1.0,
+      top_p:       options.topP       ?? 1.0,
+      stream:      false,
     });
 
     const content = response.choices?.[0]?.message?.content || '';
     if (!content.trim()) throw new Error('Kimi returned empty response');
+    logger.debug(`[Kimi] Response → ${content.length} chars`);
     return content;
   } catch (err) {
     logger.error(`[Kimi] API error: ${err.message}`);
-    throw new Error(`Kimi API error: ${err.message}`);
+    const msg = err.status
+      ? `Kimi API error ${err.status}: ${err.message}`
+      : `Kimi API error: ${err.message}`;
+    throw new Error(msg);
   }
 }
 
@@ -75,24 +84,33 @@ async function chatWithKimi(messages, options = {}) {
 async function chatWithDeepSeek(messages, options = {}) {
   const client  = getNvidiaClient();
   const thinking = options.thinking !== false; // enabled by default
-  const STREAM_TIMEOUT_MS = 45000; // 45s max for streaming
+  // DeepSeek with chain-of-thought can take 60–90s for complex prompts.
+  // This must stay < the caller's outer timeout (engine.js uses 75s).
+  const STREAM_TIMEOUT_MS = 70000; // 70s max for streaming
+
+  const model     = options.model     || config.llm.nvidia.deepseekModel;
+  const maxTokens = options.maxTokens || 8192;
+
+  logger.debug(`[DeepSeek] Request → model=${model} max_tokens=${maxTokens} thinking=${thinking} messages=${messages.length}`);
 
   let stream;
   try {
     stream = await client.chat.completions.create({
-      model:      options.model     || config.llm.nvidia.deepseekModel,
+      model,
       messages,
-      max_tokens: options.maxTokens || 8192,
-      temperature:options.temperature ?? 1.0,
-      top_p:      options.topP      ?? 0.95,
-      stream:     true,
-      extra_body: thinking
-        ? { chat_template_kwargs: { thinking: true } }
-        : undefined,
+      max_tokens:  maxTokens,
+      temperature: options.temperature ?? 1.0,
+      top_p:       options.topP       ?? 0.95,
+      stream:      true,
+      ...(thinking ? { extra_body: { chat_template_kwargs: { thinking: true } } } : {}),
     });
   } catch (err) {
     logger.error(`[DeepSeek] Stream creation failed: ${err.message}`);
-    throw new Error(`DeepSeek API error: ${err.message}`);
+    // Surface API-level errors clearly (auth failure, model not found, rate limit)
+    const msg = err.status
+      ? `DeepSeek API error ${err.status}: ${err.message}`
+      : `DeepSeek API error: ${err.message}`;
+    throw new Error(msg);
   }
 
   let reasoningBuf = '';

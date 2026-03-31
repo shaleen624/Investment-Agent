@@ -153,9 +153,10 @@ async function generateMorningBrief(userId = null) {
   });
 
   try {
+    // 75s: DeepSeek with thinking mode can take 60-90s. Must be < route timeout (90s).
     const content = await withTimeout(
       llm.chat(prompt, { maxTokens: 3000 }),
-      25000,
+      75000,
       'Morning brief LLM call'
     );
     const summary = content.slice(0, 800); // first ~800 chars as summary
@@ -218,9 +219,10 @@ async function generateEveningBrief(userId = null) {
   });
 
   try {
+    // 75s: must be < route timeout (90s) and > streaming timeout (70s).
     const content = await withTimeout(
       llm.chat(prompt, { maxTokens: 3500 }),
-      30000,
+      75000,
       'Evening brief LLM call'
     );
     const summary = content.slice(0, 800);
@@ -257,7 +259,7 @@ async function analyzePortfolio() {
   const prompt   = prompts.portfolioAnalysisPrompt({ portfolio: portfolioSummary, market: snapshot, goals });
   const analysis = await withTimeout(
     llm.chat(prompt, { maxTokens: 4000 }),
-    30000,
+    75000,
     'Portfolio analysis LLM call'
   );
   return analysis;

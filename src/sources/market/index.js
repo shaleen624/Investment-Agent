@@ -270,6 +270,7 @@ async function updateAllPrices(userId = null, options = {}) {
   });
 
   const fallbackStartedAt = Date.now();
+  // Low concurrency to avoid rate-limiting NSE/Yahoo with too many simultaneous requests.
   await mapInBatches(fallbackCandidates, async (holding) => {
     if (deadline && Date.now() >= deadline) return null;
 
@@ -280,11 +281,15 @@ async function updateAllPrices(userId = null, options = {}) {
 
     try {
       let quote = null;
-      if (holding.effectiveExchange === 'NSE') {
-        quote = await nse.getQuote(holding.effectiveSymbol);
+      // Try Yahoo first (individual) — less strict rate limiting than batch crumb
+      try {
+        quote = await yahoo.getQuote(holding.effectiveSymbol, holding.effectiveExchange || 'NSE');
+      } catch {
+        // fall through to NSE
       }
+      // NSE as last resort — only if Yahoo failed
       if ((!quote || !quote.price) && holding.effectiveExchange === 'NSE') {
-        quote = await yahoo.getQuote(holding.effectiveSymbol, 'NSE');
+        quote = await nse.getQuote(holding.effectiveSymbol);
       }
       if (quote?.price) {
         quoteMap.set(`${holding.effectiveExchange}:${holding.effectiveSymbol}`, quote);
@@ -297,7 +302,7 @@ async function updateAllPrices(userId = null, options = {}) {
     debug.fallback.completed++;
     debug.elapsedMs = Date.now() - startedAt;
     return null;
-  }, 8);
+  }, 3); // Low concurrency: 3 simultaneous to avoid rate-limit 429 / NSE bans
   debug.fallback.durationMs = Date.now() - fallbackStartedAt;
 
   let processed = 0;
@@ -366,11 +371,44 @@ async function updateAllPrices(userId = null, options = {}) {
 
 /**
  * Fetch and store a market snapshot (indices).
+ * Only persists if at least one index has a valid price.
+ * Falls back to NSE direct API for Indian indices if Yahoo is unavailable.
  */
 async function captureMarketSnapshot() {
   try {
-    const indices = await yahoo.getMarketIndices();
+    let indices = await yahoo.getMarketIndices();
     const { date: today, time } = getIstDateTimeParts();
+
+    // Patch in NSE data for Indian indices if Yahoo couldn't fill them
+    const indianKeys = ['nifty50', 'sensex', 'niftyBank'];
+    const indianMissing = indianKeys.filter(k => !indices[k]?.price);
+    if (indianMissing.length > 0) {
+      try {
+        const nseData = await nse.getNifty50();
+        if (nseData?.price && !indices.nifty50?.price) {
+          indices.nifty50 = {
+            name: 'Nifty 50', ticker: '^NSEI',
+            price: nseData.price, change: nseData.change,
+            changePercent: nseData.changePercent, prevClose: nseData.prevClose,
+          };
+          logger.info('[Market] Patched Nifty50 from NSE direct API');
+        }
+      } catch (nseErr) {
+        logger.debug(`[Market] NSE index patch failed: ${nseErr.message}`);
+      }
+    }
+
+    // Don't persist a fully-empty snapshot — callers can still use the returned object
+    const hasAnyPrice = [
+      indices.nifty50?.price, indices.sensex?.price, indices.dowJones?.price,
+      indices.nasdaq?.price, indices.usdInr?.price,
+    ].some(v => v != null);
+
+    if (!hasAnyPrice) {
+      logger.warn('[Market] captureMarketSnapshot: all index prices empty — skipping DB insert');
+      return indices;
+    }
+
     const firstUser = dbGet(`SELECT id FROM users ORDER BY id ASC LIMIT 1`);
 
     run(

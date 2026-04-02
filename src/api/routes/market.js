@@ -5,22 +5,39 @@ const market     = require('../../sources/market');
 
 const r = Router();
 
-// GET /api/market/snapshot  — latest stored snapshot (lazy fetch if missing/stale)
+// Helper: does a snapshot have at least one real price?
+function isSnapshotValid(snap) {
+  if (!snap) return false;
+  return [snap.nifty50, snap.sensex, snap.dow_jones, snap.nasdaq, snap.usd_inr]
+    .some(v => v != null);
+}
+
+// GET /api/market/snapshot  — latest stored snapshot (lazy fetch if missing/stale/empty)
 r.get('/snapshot', async (_req, res) => {
   try {
     const today = market.getCurrentIstDate();
     let snap = market.getLatestSnapshot();
 
-    // Lazy-load snapshot on first request, and refresh once per IST day.
-    if (!snap || snap.date !== today) {
+    // Refresh if: no snapshot, or it's from a previous day, or it has no valid prices.
+    if (!isSnapshotValid(snap) || snap.date !== today) {
       const timeout = new Promise((_, rej) =>
         setTimeout(() => rej(new Error('Snapshot fetch timed out')), 20000));
       await Promise.race([market.captureMarketSnapshot(), timeout]).catch(() => {});
       snap = market.getLatestSnapshot();
     }
 
-    if (!snap) return res.status(404).json({ error: 'No snapshot available yet.' });
-    res.json(snap);
+    if (!snap) return res.status(404).json({ error: 'No market data available yet. Try POST /api/market/refresh.' });
+
+    const result = { ...snap };
+
+    // Annotate when data is stale (couldn't get today's data)
+    if (!isSnapshotValid(snap)) {
+      result._warning = 'Market data sources unavailable. Prices may be stale or missing.';
+    } else if (snap.date !== today) {
+      result._warning = `Live data unavailable. Showing last available data from ${snap.date}.`;
+    }
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

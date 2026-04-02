@@ -27,6 +27,12 @@ async function getYF() {
     yf = typeof YahooFinance === 'function' && YahooFinance.prototype?.quote
       ? new YahooFinance()
       : YahooFinance;
+
+    // Suppress the survey-invitation console noise from yahoo-finance2
+    if (typeof yf.suppressNotices === 'function') {
+      yf.suppressNotices(['yahooSurvey', 'ripHistorical']);
+    }
+
     _yfReady = true;
     return yf;
   } catch (err) {
@@ -46,6 +52,27 @@ function toYahooTicker(symbol, exchange = 'NSE') {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Retry wrapper for yahoo-finance2 calls.
+ * Handles 429 rate-limit by backing off and retrying up to maxRetries times.
+ */
+async function withYfRetry(fn, maxRetries = 2, baseDelayMs = 1500) {
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const is429 = err.message?.includes('429') || err.status === 429;
+      if (!is429 || attempt === maxRetries) throw err;
+      const delay = baseDelayMs * Math.pow(2, attempt); // 1.5s, 3s
+      logger.debug(`[Yahoo] 429 rate limit — retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
 }
 
 async function yahooGet(path, params = {}, options = {}, attempt = 1, hostIdx = 0) {
@@ -121,11 +148,11 @@ async function getQuote(symbol, exchange = 'NSE') {
     logger.warn(`[Yahoo] no-crumb quote fetch failed for ${ticker}: ${err.message}`);
   }
 
-  // Fallback to yahoo-finance2 quote (may need crumb/cookie).
+  // Fallback to yahoo-finance2 quote (may need crumb/cookie). Retry on 429.
   const yf = await getYF();
   if (!yf || typeof yf.quote !== 'function') throw new Error('yahoo-finance2 quote not available');
   try {
-    const q = await yf.quote(ticker);
+    const q = await withYfRetry(() => yf.quote(ticker));
     return mapQuoteShape(symbol, exchange, ticker, q);
   } catch (err) {
     logger.error(`[Yahoo] getQuote failed for ${ticker}: ${err.message}`);
@@ -159,13 +186,13 @@ async function getQuotes(symbols, exchange = 'NSE') {
     logger.warn(`[Yahoo] no-crumb getQuotes failed, falling back: ${err.message}`);
   }
 
-  // Fallback path
+  // Fallback path via yahoo-finance2 (with crumb). Retry on 429.
   const yf = await getYF();
   if (!yf || typeof yf.quote !== 'function') throw new Error('yahoo-finance2 quote not available');
   try {
     for (let i = 0; i < tickers.length; i += 20) {
       const batch = tickers.slice(i, i + 20);
-      const results = await yf.quote(batch);
+      const results = await withYfRetry(() => yf.quote(batch));
       const arr = Array.isArray(results) ? results : [results];
       arr.forEach((q, idx) => {
         const globalIdx = i + idx;
@@ -284,14 +311,15 @@ async function getMarketIndices() {
   const yf = await getYF();
   if (yf && typeof yf.quote === 'function') {
     try {
-      const quotes = await yf.quote(tickers);
+      const quotes = await withYfRetry(() => yf.quote(tickers));
       const arr = Array.isArray(quotes) ? quotes : [quotes];
       const snap2 = buildSnapshotFromArr(arr);
       if (hasValidData(snap2)) {
         snap2.fetchedAt = new Date().toISOString();
-        logger.debug('[Yahoo] getMarketIndices: yahoo-finance2 fallback succeeded');
+        logger.info('[Yahoo] getMarketIndices: yahoo-finance2 fallback succeeded');
         return snap2;
       }
+      logger.warn('[Yahoo] getMarketIndices: yahoo-finance2 returned no prices');
     } catch (err) {
       logger.warn(`[Yahoo] yahoo-finance2 getMarketIndices failed: ${err.message}`);
     }

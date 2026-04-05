@@ -46,7 +46,7 @@ export class NavComponent {
     { value: 'deepseek', label: 'DeepSeek V3.2',   provider: 'NVIDIA NIM'  },
     { value: 'kimi',     label: 'Kimi K2',          provider: 'NVIDIA NIM'  },
     { value: 'openrouter:deepseek/deepseek-r1',                   label: 'DeepSeek R1',       provider: 'OpenRouter', free: true },
-    { value: 'openrouter:deepseek/deepseek-chat-v3-0324:free',    label: 'DeepSeek V3',       provider: 'OpenRouter', free: true },
+    { value: 'openrouter:deepseek/deepseek-v3-0324:free',         label: 'DeepSeek V3',       provider: 'OpenRouter', free: true },
     { value: 'openrouter:meta-llama/llama-4-maverick:free',       label: 'Llama 4 Maverick',  provider: 'OpenRouter', free: true },
     { value: 'openrouter:qwen/qwen3-235b-a22b:free',              label: 'Qwen3 235B',        provider: 'OpenRouter', free: true },
     { value: 'openrouter:mistralai/mistral-small-3.1-24b-instruct:free', label: 'Mistral Small', provider: 'OpenRouter', free: true },

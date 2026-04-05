@@ -21,6 +21,7 @@ const portfolio = require('../portfolio/manager');
 const market    = require('../sources/market');
 const news      = require('../sources/news');
 const { getDb } = require('../db');
+const llm       = require('../llm/provider');
 
 // ── Telegram bot command handlers ─────────────────────────────────────────────
 
@@ -109,6 +110,17 @@ async function start() {
   // 2. Initialize DB
   getDb();
   logger.info('[Agent] Database initialized');
+
+  // 2b. Restore saved LLM provider preference (persisted by user via nav selector)
+  try {
+    const savedProfile = portfolio.getProfile();
+    if (savedProfile?.default_llm_provider) {
+      llm.setProviderOverride(savedProfile.default_llm_provider, savedProfile.default_llm_model || null);
+      logger.info(`[Agent] Restored LLM override: ${savedProfile.default_llm_provider}${savedProfile.default_llm_model ? ' / ' + savedProfile.default_llm_model : ''}`);
+    }
+  } catch (e) {
+    logger.debug(`[Agent] Could not restore LLM preference: ${e.message}`);
+  }
 
   // 3. Start REST API server
   await apiServer.start();

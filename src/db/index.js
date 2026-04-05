@@ -72,6 +72,17 @@ function getDb() {
     _db.exec('CREATE INDEX IF NOT EXISTS idx_holdings_isin ON holdings(isin)');
   } catch {}
 
+  // Add default_llm_provider / default_llm_model to user_profile if missing
+  try {
+    const profileInfo = _db.pragma('table_info(user_profile)');
+    if (!profileInfo.some((c) => c.name === 'default_llm_provider')) {
+      _db.exec('ALTER TABLE user_profile ADD COLUMN default_llm_provider TEXT');
+    }
+    if (!profileInfo.some((c) => c.name === 'default_llm_model')) {
+      _db.exec('ALTER TABLE user_profile ADD COLUMN default_llm_model TEXT');
+    }
+  } catch {}
+
   return _db;
 }
 

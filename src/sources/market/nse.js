@@ -113,7 +113,7 @@ async function nseGet(endpoint) {
   try {
     const res = await axios.get(`${BASE}/api/${endpoint}`, {
       headers: { ...API_HEADERS, Cookie: cookies },
-      timeout: 15000,
+      timeout: 7000,
     });
     return res.data;
   } catch (err) {
@@ -124,7 +124,7 @@ async function nseGet(endpoint) {
       const freshCookies = await getSession();
       const retry = await axios.get(`${BASE}/api/${endpoint}`, {
         headers: { ...API_HEADERS, Cookie: freshCookies },
-        timeout: 15000,
+        timeout: 7000,
       });
       return retry.data;
     }

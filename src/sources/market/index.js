@@ -275,8 +275,51 @@ async function updateAllPrices(userId = null, options = {}) {
   });
 
   const fallbackStartedAt = Date.now();
-  // Low concurrency to avoid rate-limiting NSE/Yahoo with too many simultaneous requests.
-  await mapInBatches(fallbackCandidates, async (holding) => {
+
+  // ── NSE bulk pre-fill ────────────────────────────────────────────────────────
+  // Before doing expensive individual fallbacks, try a single NSE call that
+  // returns ALL Nifty 50 stocks at once. This can eliminate most individual
+  // calls and avoids hammering Yahoo Finance with 429-triggering requests.
+  const nseNeedsFallback = fallbackCandidates.filter(
+    (h) => !h.effectiveExchange || h.effectiveExchange === 'NSE'
+  );
+  if (nseNeedsFallback.length > 0 && !(deadline && Date.now() >= deadline)) {
+    try {
+      const nifty50Stocks = await nse.getNifty50Stocks();
+      if (nifty50Stocks.length > 0) {
+        const nseMap = new Map(nifty50Stocks.map((s) => [s.symbol.toUpperCase(), s]));
+        for (const holding of nseNeedsFallback) {
+          const sym = holding.effectiveSymbol.toUpperCase();
+          const s = nseMap.get(sym);
+          if (s?.price) {
+            quoteMap.set(`NSE:${holding.effectiveSymbol}`, {
+              symbol: holding.effectiveSymbol,
+              exchange: 'NSE',
+              price: s.price,
+              change: s.change,
+              changePercent: s.changePercent,
+              prevClose: s.prevClose,
+              name: s.name || holding.name,
+              fetchedAt: new Date().toISOString(),
+            });
+            debug.fallback.quotesReturned++;
+          }
+        }
+        logger.info(`[Market] NSE bulk pre-fill: got ${nifty50Stocks.length} stocks, filled ${debug.fallback.quotesReturned} missing quotes`);
+      }
+    } catch (nseErr) {
+      logger.debug(`[Market] NSE Nifty50 bulk pre-fill failed: ${nseErr.message}`);
+    }
+  }
+
+  // Recompute candidates after bulk NSE pre-fill
+  const remainingFallback = fallbackCandidates.filter((h) => {
+    const key = `${h.effectiveExchange}:${h.effectiveSymbol}`;
+    return !quoteMap.has(key);
+  });
+
+  // Low concurrency to avoid rate-limiting NSE with too many simultaneous requests.
+  await mapInBatches(remainingFallback, async (holding) => {
     if (deadline && Date.now() >= deadline) return null;
 
     debug.fallback.attempted++;
@@ -286,16 +329,25 @@ async function updateAllPrices(userId = null, options = {}) {
 
     try {
       let quote = null;
-      // Try Yahoo first (individual) — less strict rate limiting than batch crumb
-      try {
-        quote = await yahoo.getQuote(holding.effectiveSymbol, holding.effectiveExchange || 'NSE');
-      } catch {
-        // fall through to NSE
+      const isNse = !holding.effectiveExchange || holding.effectiveExchange === 'NSE';
+
+      if (isNse) {
+        // For NSE stocks: go directly to NSE — Yahoo batch already failed/rate-limited,
+        // retrying Yahoo individually just triggers more 429 errors.
+        try {
+          quote = await nse.getQuote(holding.effectiveSymbol);
+        } catch (nseErr) {
+          logger.debug(`[Market] NSE individual failed for ${holding.effectiveSymbol}: ${nseErr.message}`);
+        }
+      } else {
+        // Non-NSE (US stocks, BSE, etc.): try Yahoo individual as it may work
+        try {
+          quote = await yahoo.getQuote(holding.effectiveSymbol, holding.effectiveExchange);
+        } catch {
+          // nothing more to try
+        }
       }
-      // NSE as last resort — only if Yahoo failed
-      if ((!quote || !quote.price) && holding.effectiveExchange === 'NSE') {
-        quote = await nse.getQuote(holding.effectiveSymbol);
-      }
+
       if (quote?.price) {
         quoteMap.set(`${holding.effectiveExchange}:${holding.effectiveSymbol}`, quote);
         debug.fallback.quotesReturned++;
@@ -307,7 +359,7 @@ async function updateAllPrices(userId = null, options = {}) {
     debug.fallback.completed++;
     debug.elapsedMs = Date.now() - startedAt;
     return null;
-  }, 3); // Low concurrency: 3 simultaneous to avoid rate-limit 429 / NSE bans
+  }, 3); // Low concurrency: 3 simultaneous to avoid NSE bans
   debug.fallback.durationMs = Date.now() - fallbackStartedAt;
 
   const mfHoldings = prepared.filter((holding) => holding.asset_type === 'mutual_fund');

@@ -416,6 +416,25 @@ function upsertProfile(profile) {
   }
 }
 
+/**
+ * Save/update the user's preferred LLM provider so it persists across restarts.
+ */
+function upsertLlmDefault(provider, model) {
+  ensureUserProfileTable();
+  const existing = getProfile();
+  if (existing) {
+    run(
+      `UPDATE user_profile SET default_llm_provider = ?, default_llm_model = ?, updated_at = datetime('now') WHERE id = 1`,
+      [provider || null, model || null]
+    );
+  } else {
+    run(
+      `INSERT INTO user_profile (id, default_llm_provider, default_llm_model) VALUES (1, ?, ?)`,
+      [provider || null, model || null]
+    );
+  }
+}
+
 // ── Analytics Helpers ─────────────────────────────────────────────────────────
 
 /**
@@ -526,6 +545,7 @@ module.exports = {
   deleteGoal,
   getProfile,
   upsertProfile,
+  upsertLlmDefault,
   getPortfolioSummary,
   calculateXIRR,
 };

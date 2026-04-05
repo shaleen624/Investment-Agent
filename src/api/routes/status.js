@@ -91,6 +91,12 @@ r.put('/llm', authenticateToken, (req, res) => {
   }
 
   llm.setProviderOverride(provider, model || null);
+
+  // Persist as the user's default model so it survives server restarts
+  try {
+    pm.upsertLlmDefault(provider, model || null);
+  } catch { /* non-fatal */ }
+
   res.json({ ok: true, active: provider, model: model || null });
 });
 

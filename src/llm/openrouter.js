@@ -74,7 +74,7 @@ function isConfigured() {
 // Well-known OpenRouter models grouped by capability
 const POPULAR_MODELS = [
   { id: 'deepseek/deepseek-r1',                   name: 'DeepSeek R1',          free: true  },
-  { id: 'deepseek/deepseek-chat-v3-0324:free',     name: 'DeepSeek V3 (free)',   free: true  },
+  { id: 'deepseek/deepseek-v3-0324:free',           name: 'DeepSeek V3 (free)',   free: true  },
   { id: 'google/gemini-2.5-pro-preview-03-25',     name: 'Gemini 2.5 Pro',       free: false },
   { id: 'meta-llama/llama-4-maverick:free',        name: 'Llama 4 Maverick',     free: true  },
   { id: 'anthropic/claude-sonnet-4-5',             name: 'Claude Sonnet 4.5',    free: false },

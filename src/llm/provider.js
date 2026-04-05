@@ -68,19 +68,38 @@ async function chatWithOpenAI(messages, options = {}) {
  */
 // ── Fallback chain ────────────────────────────────────────────────────────────
 // Priority order tried when a provider fails (or has no key).
-// First provider with a configured key wins.
 const FALLBACK_ORDER = ['claude', 'kimi', 'deepseek', 'openai'];
 
+// Runtime override — set via PUT /api/status/llm without restart
+let _providerOverride = null;
+let _modelOverride    = null;
+
+function setProviderOverride(provider, model = null) {
+  _providerOverride = provider;
+  _modelOverride    = model;
+  logger.info(`[LLM] Runtime override set: provider=${provider}${model ? ' model=' + model : ''}`);
+}
+
+function getProviderOverride() {
+  return { provider: _providerOverride, model: _modelOverride };
+}
+
 function _hasKey(provider) {
-  if (provider === 'claude')    return !!config.llm.claude.apiKey;
-  if (provider === 'openai')    return !!config.llm.openai.apiKey;
-  if (provider === 'kimi')      return !!config.llm.nvidia.apiKey;
-  if (provider === 'deepseek')  return !!config.llm.nvidia.apiKey;
+  if (provider === 'claude')      return !!config.llm.claude.apiKey;
+  if (provider === 'openai')      return !!config.llm.openai.apiKey;
+  if (provider === 'kimi')        return !!config.llm.nvidia.apiKey;
+  if (provider === 'deepseek')    return !!config.llm.nvidia.apiKey;
+  if (provider === 'openrouter')  return !!config.llm.openrouter?.apiKey;
   return false;
 }
 
 async function chat(prompt, options = {}) {
-  const provider = options.provider || config.llm.provider;
+  // Respect runtime override (set via API) unless caller explicitly chose a provider
+  const effectiveOverride = !options.provider && _providerOverride ? _providerOverride : null;
+  const provider = options.provider || effectiveOverride || config.llm.provider;
+
+  // Attach model override for openrouter when using runtime override
+  const effectiveModel = options.model || (_providerOverride === provider ? _modelOverride : null);
 
   if (provider === 'none') {
     throw new Error(
@@ -88,7 +107,7 @@ async function chat(prompt, options = {}) {
     );
   }
 
-  logger.debug(`[LLM] Sending request via ${provider}`);
+  logger.debug(`[LLM] Sending request via ${provider}${effectiveModel ? '/' + effectiveModel : ''}`);
 
   try {
     if (provider === 'claude') {
@@ -112,15 +131,27 @@ async function chat(prompt, options = {}) {
       });
     }
 
+    if (provider === 'openrouter') {
+      const openrouter = require('./openrouter');
+      const messages = [];
+      if (prompt.system) messages.push({ role: 'system', content: prompt.system });
+      messages.push({ role: 'user', content: prompt.user });
+      return await openrouter.chat(messages, { ...options, model: effectiveModel || options.model });
+    }
+
     throw new Error(`Unknown LLM provider: "${provider}"`);
 
   } catch (err) {
-    // Auto-fallback to the next available provider in the chain
+    // Auto-fallback: rotate through ALL providers with keys, not just those after current.
+    // This ensures kimi is tried when deepseek fails (both share NVIDIA key).
     if (!options._isFallback) {
       const currentIdx = FALLBACK_ORDER.indexOf(provider);
-      const next = FALLBACK_ORDER
-        .slice(currentIdx + 1)
-        .find(p => _hasKey(p) && p !== provider);
+      // Rotate: after current first, then wrap to before current
+      const rotated = [
+        ...FALLBACK_ORDER.slice(currentIdx + 1),
+        ...FALLBACK_ORDER.slice(0, currentIdx),
+      ];
+      const next = rotated.find(p => _hasKey(p) && p !== provider);
 
       if (next) {
         logger.warn(`[LLM] ${provider} failed (${err.message}). Falling back to ${next}`);
@@ -172,4 +203,4 @@ function isAvailable() {
   return FALLBACK_ORDER.some(p => _hasKey(p));
 }
 
-module.exports = { chat, extractJSON, isAvailable };
+module.exports = { chat, extractJSON, isAvailable, setProviderOverride, getProviderOverride, FALLBACK_ORDER, _hasKey };

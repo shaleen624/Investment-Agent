@@ -60,6 +60,13 @@ const config = {
       // DeepSeek extended thinking (chain-of-thought). Disable to reduce latency.
       deepseekThinking: getBool('DEEPSEEK_THINKING', true),
     },
+
+    // OpenRouter — 100+ models from one API key
+    openrouter: {
+      apiKey: get('OPENROUTER_API_KEY'),
+      // Default model (can be overridden per-request or via PUT /api/status/llm)
+      model:  get('OPENROUTER_MODEL', 'deepseek/deepseek-r1'),
+    },
   },
 
   // ── Market Data ───────────────────────────────────────────────────────────

@@ -33,6 +33,14 @@ export class ApiService {
     return this.http.get<AgentStatus>(`${this.base}/status`);
   }
 
+  llmConfig(): Observable<any> {
+    return this.http.get<any>(`${this.base}/status/llm`);
+  }
+
+  setLlmProvider(provider: string, model?: string): Observable<any> {
+    return this.http.put<any>(`${this.base}/status/llm`, { provider, model });
+  }
+
   // ── Portfolio ─────────────────────────────────────────────────────────────
   portfolioSummary(): Observable<PortfolioSummary> {
     return this.http.get<PortfolioSummary>(`${this.base}/portfolio/summary`);

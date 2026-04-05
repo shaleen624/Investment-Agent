@@ -16,16 +16,13 @@
   margin-bottom: 16px;
 }
 
-.card {
-  margin-bottom: 16px;
-}
+.card { margin-bottom: 16px; }
 
 .card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
-
   .card-title { margin-bottom: 0; }
 }
 
@@ -36,14 +33,34 @@
   margin: 0 0 16px;
 }
 
-// ── Indices ──────────────────────────────────────────────────────────────────
+// ── Market stale warning ──────────────────────────────────────────────────────
+.market-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--yellow, #fbbf24);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.index-date {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+// ── Indices ───────────────────────────────────────────────────────────────────
 .index-list {
   list-style: none;
   padding: 0;
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 .index-row {
@@ -53,13 +70,26 @@
   padding: 8px 12px;
   background: var(--bg-secondary);
   border-radius: 8px;
+  border-left: 3px solid transparent;
+  transition: border-color 0.2s;
+
+  &.up   { border-left-color: var(--green); }
+  &.down { border-left-color: var(--red);   }
 }
 
 .index-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
   letter-spacing: 0.06em;
+  min-width: 80px;
+}
+
+.index-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
 }
 
 .index-value {
@@ -67,9 +97,35 @@
   font-weight: 700;
   color: var(--text-primary);
   font-feature-settings: "tnum";
+  line-height: 1;
 }
 
-// ── Recommendations ──────────────────────────────────────────────────────────
+.index-change {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  font-feature-settings: "tnum";
+  line-height: 1;
+
+  &.positive { color: var(--green); }
+  &.negative { color: var(--red);   }
+}
+
+.chg-arrow {
+  width: 7px;
+  height: 7px;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.index-abs {
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+// ── Recommendations ───────────────────────────────────────────────────────────
 .rec-list {
   list-style: none;
   padding: 0;
@@ -78,46 +134,59 @@
 
 .rec-item {
   gap: 10px;
+  align-items: flex-start;
 }
 
 .rec-symbol {
   font-weight: 700;
   font-size: 14px;
   color: var(--text-primary);
-  min-width: 60px;
+  min-width: 64px;
   font-family: var(--font-mono);
+  padding-top: 2px;
+}
+
+.rec-details {
+  flex: 1;
+  min-width: 0;
 }
 
 .rec-name {
   font-size: 13px;
   color: var(--text-muted);
-  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 2px;
+}
+
+.rec-rationale {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.spacer { flex: 1; }
+.rec-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
 
 .rec-conf {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   font-feature-settings: "tnum";
-  min-width: 32px;
-  text-align: right;
 }
 
-// ── News ─────────────────────────────────────────────────────────────────────
-.news-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
+// ── News ──────────────────────────────────────────────────────────────────────
+.news-list { list-style: none; padding: 0; margin: 0; }
 
-.news-item {
-  align-items: flex-start;
-  gap: 12px;
-}
+.news-item { align-items: flex-start; gap: 12px; }
 
 .news-content { flex: 1; min-width: 0; }
 
@@ -129,7 +198,6 @@
   text-decoration: none;
   line-height: 1.4;
   margin-bottom: 4px;
-
   &:hover { color: var(--accent); }
 }
 
@@ -143,11 +211,7 @@
 .news-source { font-weight: 600; }
 
 // ── Skeleton placeholders ─────────────────────────────────────────────────────
-.list-skeleton {
-  height: 52px;
-  border-radius: 10px;
-  margin-bottom: 8px;
-}
+.list-skeleton { height: 52px; border-radius: 10px; margin-bottom: 8px; }
 
 // ── Desktop tweaks ────────────────────────────────────────────────────────────
 @media (min-width: 768px) {

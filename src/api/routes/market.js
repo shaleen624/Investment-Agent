@@ -1,9 +1,11 @@
 'use strict';
-const { Router } = require('express');
-const { all }    = require('../../db');
-const market     = require('../../sources/market');
+const { Router }          = require('express');
+const { all }             = require('../../db');
+const market              = require('../../sources/market');
+const { authenticateToken } = require('../middleware/auth');
 
 const r = Router();
+r.use(authenticateToken);
 
 // Helper: does a snapshot have at least one real price?
 function isSnapshotValid(snap) {
@@ -78,12 +80,14 @@ r.post('/refresh', async (_req, res) => {
 
 // GET /api/market/recommendations?limit=10
 r.get('/recommendations', (req, res) => {
-  const limit = parseInt(req.query.limit || '10');
-  const rows  = all(
+  const limit  = parseInt(req.query.limit || '10');
+  const userId = req.user.id;
+  const rows   = all(
     `SELECT r.*, h.name as holding_name FROM recommendations r
      LEFT JOIN holdings h ON r.holding_id = h.id
+     WHERE r.user_id = ?
      ORDER BY r.created_at DESC LIMIT ?`,
-    [limit]
+    [userId, limit]
   );
   res.json(rows);
 });

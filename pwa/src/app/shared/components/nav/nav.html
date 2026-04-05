@@ -1,0 +1,92 @@
+<nav class="nav-sidebar" aria-label="Main navigation">
+  <div class="nav-brand">
+    <span class="brand-icon" aria-hidden="true">&#9650;</span>
+    <span class="brand-name">InvestIQ</span>
+    @if (status()?.ok) {
+      <span class="status-dot active" title="Agent online"></span>
+    } @else {
+      <span class="status-dot" title="Agent offline"></span>
+    }
+  </div>
+
+  <ul class="nav-items" role="list">
+    @for (item of items; track item.path) {
+      <li>
+        <a [routerLink]="item.path"
+           routerLinkActive="active"
+           [routerLinkActiveOptions]="{ exact: item.path === 'dashboard' }"
+           class="nav-item"
+           [attr.aria-label]="item.label">
+          <span class="nav-icon" [innerHTML]="item.icon" aria-hidden="true"></span>
+          <span class="nav-label">{{ item.label }}</span>
+        </a>
+      </li>
+    }
+  </ul>
+
+  <div class="nav-footer">
+    <!-- AI Model Selector -->
+    <div class="model-selector">
+      <button
+        class="model-trigger"
+        type="button"
+        (click)="toggleModelSelector()"
+        [attr.aria-expanded]="modelSelectorOpen()"
+        aria-controls="model-dropdown"
+        title="Switch AI model">
+        <span class="model-icon" aria-hidden="true">&#129302;</span>
+        <span class="model-info">
+          <span class="model-label">AI Model</span>
+          <span class="model-active">
+            @if (saving()) { Saving… }
+            @else if (saveOk()) { ✓ Saved }
+            @else { {{ activeLabel() }} }
+          </span>
+        </span>
+        <svg class="chevron" [class.open]="modelSelectorOpen()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+
+      @if (modelSelectorOpen()) {
+        <div class="model-dropdown" id="model-dropdown" role="listbox" [attr.aria-label]="'Select AI model'">
+          @for (group of groupedOptions; track group[0]) {
+            <div class="model-group">
+              <div class="model-group-label">{{ group[0] }}</div>
+              @for (opt of group[1]; track opt.value) {
+                <button
+                  type="button"
+                  class="model-option"
+                  role="option"
+                  [class.selected]="selectedModel() === opt.value"
+                  [attr.aria-selected]="selectedModel() === opt.value"
+                  (click)="applyModel(opt.value)">
+                  <span class="option-label">{{ opt.label }}</span>
+                  @if (opt.free) {
+                    <span class="free-badge">free</span>
+                  }
+                  @if (selectedModel() === opt.value) {
+                    <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  }
+                </button>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    @if (auth.isLoggedIn()) {
+      <button (click)="logout()" class="nav-item logout-btn" type="button" aria-label="Logout">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+          </svg>
+        </span>
+        <span class="nav-label">Logout</span>
+      </button>
+    }
+  </div>
+</nav>

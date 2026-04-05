@@ -229,7 +229,7 @@ async function generateEveningBrief(userId = null) {
     const briefId = saveBrief('evening', content, summary, snapshot, userId);
 
     // Extract and save recommendations from brief
-    await extractAndSaveRecommendations(content, briefId);
+    await extractAndSaveRecommendations(content, briefId, userId);
 
     logger.info('[Analysis] Evening brief generated');
     return { content, briefId };

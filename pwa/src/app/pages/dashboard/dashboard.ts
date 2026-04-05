@@ -1,12 +1,11 @@
-import { Component, inject, signal, computed } from '@angular/core';
-import { UpperCasePipe }                       from '@angular/common';
-import { RouterLink }                          from '@angular/router';
-import { toSignal }                            from '@angular/core/rxjs-interop';
-import { catchError, of, forkJoin }            from 'rxjs';
-import { ApiService }                          from '../../core/services/api.service';
-import { MetricCardComponent }                 from '../../shared/components/metric-card/metric-card';
-import { DonutChartComponent, DonutSlice }     from '../../shared/components/donut-chart/donut-chart';
-import { InrPipe }                             from '../../shared/pipes/inr.pipe';
+import { Component, inject, signal, computed, ChangeDetectionStrategy } from '@angular/core';
+import { UpperCasePipe }       from '@angular/common';
+import { RouterLink }          from '@angular/router';
+import { catchError, of, forkJoin } from 'rxjs';
+import { ApiService }          from '../../core/services/api.service';
+import { MetricCardComponent } from '../../shared/components/metric-card/metric-card';
+import { DonutChartComponent, DonutSlice } from '../../shared/components/donut-chart/donut-chart';
+import { InrPipe }             from '../../shared/pipes/inr.pipe';
 import type { PortfolioSummary, MarketSnapshot, Recommendation, NewsArticle } from '../../core/models';
 
 const TYPE_COLORS: Record<string, string> = {
@@ -21,9 +20,21 @@ const TYPE_COLORS: Record<string, string> = {
   other:       '#94a3b8',
 };
 
+interface IndexRow {
+  key:           string;
+  label:         string;
+  value:         number | null;
+  change:        number | null;
+  changePercent: number | null;
+  prevClose:     number | null;
+  isUp:          boolean;
+  isDown:        boolean;
+}
+
 @Component({
   selector:   'app-dashboard',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports:    [UpperCasePipe, InrPipe, RouterLink, MetricCardComponent, DonutChartComponent],
   templateUrl: './dashboard.html',
   styleUrl:    './dashboard.scss',
@@ -31,17 +42,17 @@ const TYPE_COLORS: Record<string, string> = {
 export class DashboardPage {
   private api = inject(ApiService);
 
-  loading  = signal(true);
-  error    = signal<string | null>(null);
+  loading = signal(true);
+  error   = signal<string | null>(null);
 
-  summary  = signal<PortfolioSummary | null>(null);
-  market   = signal<MarketSnapshot | null>(null);
-  recs     = signal<Recommendation[]>([]);
-  news     = signal<NewsArticle[]>([]);
+  summary = signal<PortfolioSummary | null>(null);
+  market  = signal<MarketSnapshot | null>(null);
+  recs    = signal<Recommendation[]>([]);
+  news    = signal<NewsArticle[]>([]);
 
   donutSlices = computed<DonutSlice[]>(() => {
     const s = this.summary();
-    if (!s || !s.byType) return [];
+    if (!s?.byType) return [];
     return Object.entries(s.byType)
       .filter(([, v]) => v.current > 0)
       .sort(([, a], [, b]) => b.current - a.current)
@@ -52,32 +63,46 @@ export class DashboardPage {
       }));
   });
 
-  pnlClass = computed(() => {
-    const s = this.summary();
-    if (!s) return '';
-    return (s.pnlPercent || 0) >= 0 ? 'positive' : 'negative';
-  });
+  pnlClass = computed(() => (this.summary()?.pnlPercent ?? 0) >= 0 ? 'positive' : 'negative');
+  pnlSign  = computed(() => (this.summary()?.pnlPercent ?? 0) >= 0 ? '+' : '');
 
-  pnlSign = computed(() => {
-    const s = this.summary();
-    if (!s) return '';
-    return (s.pnlPercent || 0) >= 0 ? '+' : '';
-  });
-
-  indices = computed(() => {
+  indices = computed<IndexRow[]>(() => {
     const m = this.market();
     if (!m) return [];
+    const rd = m.raw_data ?? {};
+
+    const build = (key: string, label: string, value: number | null): IndexRow => {
+      // raw_data keys use camelCase from Yahoo Finance
+      const rawKey = {
+        nifty50:   'nifty50',   sensex:    'sensex',   nifty_bank: 'niftyBank',
+        dow_jones: 'dowJones',  nasdaq:    'nasdaq',   sp500:      'sp500',
+        usd_inr:   'usdInr',    gold_mcx:  'goldMcx',  crude_mcx: 'crudeMcx',
+        vix:       'vix',
+      }[key] ?? key;
+      const raw = rd[rawKey] ?? rd[key] ?? {} as any;
+      const chg  = raw.change        ?? null;
+      const pct  = raw.changePercent ?? null;
+      const prev = raw.prevClose      ?? null;
+      return { key, label, value, change: chg, changePercent: pct, prevClose: prev,
+               isUp: (pct ?? 0) > 0, isDown: (pct ?? 0) < 0 };
+    };
+
     return [
-      { label: 'NIFTY 50',   value: m.nifty50,    key: 'nifty50' },
-      { label: 'SENSEX',     value: m.sensex,      key: 'sensex' },
-      { label: 'BANK NIFTY', value: m.nifty_bank,  key: 'nifty_bank' },
-      { label: 'DOW',        value: m.dow_jones,   key: 'dow_jones' },
-      { label: 'NASDAQ',     value: m.nasdaq,      key: 'nasdaq' },
-      { label: 'S&P 500',    value: m.sp500,       key: 'sp500' },
-      { label: 'USD/INR',    value: m.usd_inr,     key: 'usd_inr' },
-      { label: 'GOLD',       value: m.gold_mcx,    key: 'gold_mcx' },
+      build('nifty50',   'NIFTY 50',   m.nifty50),
+      build('sensex',    'SENSEX',     m.sensex),
+      build('nifty_bank','BANK NIFTY', m.nifty_bank),
+      build('dow_jones', 'DOW JONES',  m.dow_jones),
+      build('nasdaq',    'NASDAQ',     m.nasdaq),
+      build('sp500',     'S&P 500',    m.sp500),
+      build('usd_inr',   'USD / INR',  m.usd_inr),
+      build('gold_mcx',  'GOLD',       m.gold_mcx),
+      build('crude_mcx', 'CRUDE OIL',  m.crude_mcx),
+      build('vix',       'INDIA VIX',  m.vix),
     ].filter(i => i.value != null);
   });
+
+  marketWarning = computed(() => (this.market() as any)?._warning as string | undefined);
+  marketDate    = computed(() => this.market()?.date ?? null);
 
   constructor() {
     forkJoin({
@@ -93,7 +118,7 @@ export class DashboardPage {
         this.news.set(news as NewsArticle[]);
         this.loading.set(false);
       },
-      error: err => {
+      error: () => {
         this.error.set('Failed to load dashboard data.');
         this.loading.set(false);
       },
@@ -112,10 +137,26 @@ export class DashboardPage {
     return 'neutral';
   }
 
-  formatIndex(v: number | null) {
+  formatValue(idx: IndexRow): string {
+    const v = idx.value;
     if (v == null) return '—';
     if (v > 1000) return v.toLocaleString('en-IN', { maximumFractionDigits: 0 });
     return v.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  }
+
+  formatChange(idx: IndexRow): string {
+    const pct = idx.changePercent;
+    if (pct == null) return '';
+    const sign = pct >= 0 ? '+' : '';
+    return `${sign}${pct.toFixed(2)}%`;
+  }
+
+  formatAbsChange(idx: IndexRow): string {
+    const c = idx.change;
+    if (c == null) return '';
+    const sign = c >= 0 ? '+' : '';
+    if (Math.abs(c) >= 1000) return `${sign}${c.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+    return `${sign}${c.toFixed(2)}`;
   }
 
   timeAgo(dateStr: string) {

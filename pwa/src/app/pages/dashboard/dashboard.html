@@ -57,17 +57,46 @@
 
     <!-- Market indices -->
     <section class="card">
-      <h2 class="card-title">Market Indices</h2>
+      <div class="card-header">
+        <h2 class="card-title" style="margin-bottom:0">Market Indices</h2>
+        @if (marketDate()) {
+          <span class="index-date">{{ marketDate() }}</span>
+        }
+      </div>
+
+      @if (marketWarning()) {
+        <div class="market-warning">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          {{ marketWarning() }}
+        </div>
+      }
+
       @if (loading()) {
         @for (_ of [1,2,3,4,5]; track $index) {
-          <div class="skeleton" style="height:36px;margin-bottom:8px;border-radius:8px"></div>
+          <div class="skeleton" style="height:44px;margin-bottom:6px;border-radius:8px"></div>
         }
       } @else if (indices().length) {
-        <ul class="index-list">
+        <ul class="index-list" role="list">
           @for (idx of indices(); track idx.key) {
-            <li class="index-row">
+            <li class="index-row" [class.up]="idx.isUp" [class.down]="idx.isDown">
               <span class="index-label">{{ idx.label }}</span>
-              <span class="index-value">{{ formatIndex(idx.value) }}</span>
+              <span class="index-body">
+                <span class="index-value">{{ formatValue(idx) }}</span>
+                @if (idx.changePercent != null) {
+                  <span class="index-change" [class.positive]="idx.isUp" [class.negative]="idx.isDown">
+                    @if (idx.isUp) {
+                      <svg class="chg-arrow" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1 L9 9 L1 9 Z"/></svg>
+                    } @else if (idx.isDown) {
+                      <svg class="chg-arrow" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 9 L9 1 L1 1 Z"/></svg>
+                    }
+                    {{ formatChange(idx) }}
+                    <span class="index-abs">({{ formatAbsChange(idx) }})</span>
+                  </span>
+                }
+              </span>
             </li>
           }
         </ul>
@@ -83,28 +112,35 @@
   <section class="card">
     <div class="card-header">
       <h2 class="card-title">AI Recommendations</h2>
-      <a routerLink="/market" class="btn btn-ghost btn-sm">View all</a>
+      <a routerLink="/briefs" class="btn btn-ghost btn-sm">Generate Brief</a>
     </div>
     @if (loading()) {
       @for (_ of [1,2,3]; track $index) {
         <div class="skeleton list-skeleton"></div>
       }
     } @else if (recs().length) {
-      <ul class="rec-list">
+      <ul class="rec-list" role="list">
         @for (rec of recs(); track rec.id) {
           <li class="list-item rec-item">
             <div class="rec-symbol">{{ rec.symbol }}</div>
-            <div class="rec-name">{{ rec.name }}</div>
-            <div class="spacer"></div>
-            <span class="badge badge-{{ actionClass(rec.action) }}">{{ rec.action | uppercase }}</span>
-            <span class="rec-conf" title="Confidence">{{ rec.confidence }}%</span>
+            <div class="rec-details">
+              <div class="rec-name">{{ rec.name }}</div>
+              @if (rec.rationale) {
+                <div class="rec-rationale">{{ rec.rationale }}</div>
+              }
+            </div>
+            <div class="rec-meta">
+              <span class="badge" [class]="'badge-' + actionClass(rec.action)">{{ rec.action | uppercase }}</span>
+              <span class="rec-conf" [title]="'Confidence: ' + rec.confidence + '/10'">{{ rec.confidence }}/10</span>
+            </div>
           </li>
         }
       </ul>
     } @else {
       <div class="empty-state" style="padding:20px">
-        <div class="empty-title">Generate a brief to get recommendations</div>
-        <a routerLink="/briefs" class="btn btn-sm">Go to Briefs</a>
+        <div class="empty-title">No recommendations yet</div>
+        <div class="empty-body">Generate an evening brief to get AI recommendations.</div>
+        <a routerLink="/briefs" class="btn btn-sm" style="margin-top:12px">Go to Briefs</a>
       </div>
     }
   </section>
@@ -120,7 +156,7 @@
         <div class="skeleton list-skeleton"></div>
       }
     } @else if (news().length) {
-      <ul class="news-list">
+      <ul class="news-list" role="list">
         @for (article of news(); track article.id) {
           <li class="list-item news-item">
             <div class="news-content">
@@ -133,7 +169,7 @@
               </div>
             </div>
             @if (article.sentiment) {
-              <span class="badge badge-{{ sentimentClass(article.sentiment) }} badge-sm">
+              <span class="badge badge-sm" [class]="'badge-' + sentimentClass(article.sentiment)">
                 {{ article.sentiment }}
               </span>
             }

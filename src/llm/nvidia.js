@@ -106,7 +106,12 @@ async function chatWithDeepSeek(messages, options = {}) {
     });
   } catch (err) {
     logger.error(`[DeepSeek] Stream creation failed: ${err.message}`);
-    // Surface API-level errors clearly (auth failure, model not found, rate limit)
+    const isTimeout = err.message?.includes('timed out') || err.message?.includes('ETIMEDOUT') || err.code === 'ETIMEDOUT';
+    // If thinking mode caused a timeout, retry once without it (much faster)
+    if (isTimeout && thinking && !options._deepseekRetried) {
+      logger.warn('[DeepSeek] Timeout with thinking=true, retrying without chain-of-thought');
+      return chatWithDeepSeek(messages, { ...options, thinking: false, _deepseekRetried: true });
+    }
     const msg = err.status
       ? `DeepSeek API error ${err.status}: ${err.message}`
       : `DeepSeek API error: ${err.message}`;

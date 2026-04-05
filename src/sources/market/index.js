@@ -11,6 +11,7 @@ const { run, get: dbGet, all } = require('../../db');
 const yahoo        = require('./yahoo');
 const nse          = require('./nse');
 const alphaVantage = require('./alpha-vantage');
+const amfi         = require('./amfi');
 const { isLikelyIsin, resolveTickerFromHolding } = require('./symbol-resolver');
 const RESOLVE_CONCURRENCY = 16;
 const QUOTE_BATCH_SIZE = 20;
@@ -152,10 +153,13 @@ async function updateAllPrices(userId = null, options = {}) {
 
   const params = [];
   let sql =
-    `SELECT id, user_id, symbol, isin, asset_type, exchange, name, quantity
+    `SELECT id, user_id, symbol, isin, asset_type, exchange, name, quantity, units, nav
      FROM holdings
-     WHERE asset_type NOT IN ('mutual_fund','fd','nps','bond')
-       AND symbol IS NOT NULL`;
+     WHERE (
+       (asset_type = 'mutual_fund' AND name IS NOT NULL)
+       OR
+       (asset_type NOT IN ('mutual_fund','fd','nps','bond') AND symbol IS NOT NULL)
+     )`;
 
   if (userId) {
     sql += ' AND user_id = ?';
@@ -223,6 +227,7 @@ async function updateAllPrices(userId = null, options = {}) {
   debug.resolve.durationMs = Date.now() - resolveStartedAt;
 
   const quoteMap = new Map();
+  const mfNavMap = new Map();
   const batchable = prepared.filter((holding) =>
     holding.effectiveSymbol &&
     !isLikelyIsin(holding.effectiveSymbol) &&
@@ -300,6 +305,28 @@ async function updateAllPrices(userId = null, options = {}) {
   }, 8);
   debug.fallback.durationMs = Date.now() - fallbackStartedAt;
 
+  const mfHoldings = prepared.filter((holding) => holding.asset_type === 'mutual_fund');
+  await mapInBatches(mfHoldings, async (holding) => {
+    if (deadline && Date.now() >= deadline) return null;
+
+    const navQuote = await amfi.getNavByName(holding.name);
+    if (navQuote?.nav) {
+      mfNavMap.set(holding.id, navQuote);
+    } else {
+      const unresolved = {
+        id: holding.id,
+        name: holding.name,
+        symbol: holding.symbol,
+        isin: holding.isin || null,
+        exchange: holding.exchange || '',
+      };
+      if (results.unresolvedHoldings.length < 10 && !results.unresolvedHoldings.some((item) => item.id === holding.id)) {
+        results.unresolvedHoldings.push(unresolved);
+      }
+    }
+    return null;
+  }, 6);
+
   let processed = 0;
   const applyStartedAt = Date.now();
   for (const holding of prepared) {
@@ -309,6 +336,44 @@ async function updateAllPrices(userId = null, options = {}) {
     }
 
     try {
+      if (holding.asset_type === 'mutual_fund') {
+        const navQuote = mfNavMap.get(holding.id);
+        if (!navQuote?.nav) {
+          results.skipped++;
+          debug.apply.skipped++;
+          processed++;
+          debug.apply.processed = processed;
+          continue;
+        }
+
+        const units = holding.units || holding.quantity || 0;
+        const currentValue = units * navQuote.nav;
+        const invested = dbGet(
+          'SELECT invested_amount FROM holdings WHERE id = ? AND user_id = ?',
+          [holding.id, holding.user_id]
+        )?.invested_amount || 0;
+        const unrealizedPnl = currentValue - invested;
+        const pnlPct = invested > 0 ? (unrealizedPnl / invested) * 100 : 0;
+
+        run(
+          `UPDATE holdings
+           SET current_price   = ?,
+               nav             = ?,
+               current_value   = ?,
+               unrealized_pnl  = ?,
+               pnl_percent     = ?,
+               last_updated    = datetime('now')
+           WHERE id = ?`,
+          [navQuote.nav, navQuote.nav, currentValue, unrealizedPnl, pnlPct, holding.id]
+        );
+
+        results.updated++;
+        debug.apply.updated++;
+        processed++;
+        debug.apply.processed = processed;
+        continue;
+      }
+
       const key = `${holding.effectiveExchange}:${holding.effectiveSymbol}`;
       const quote = quoteMap.get(key);
       debug.apply.lastSymbol = holding.effectiveSymbol || holding.symbol || holding.name;

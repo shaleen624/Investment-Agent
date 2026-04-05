@@ -27,6 +27,12 @@ async function getYF() {
     yf = typeof YahooFinance === 'function' && YahooFinance.prototype?.quote
       ? new YahooFinance()
       : YahooFinance;
+
+    // Suppress the survey-invitation console noise from yahoo-finance2
+    if (typeof yf.suppressNotices === 'function') {
+      yf.suppressNotices(['yahooSurvey', 'ripHistorical']);
+    }
+
     _yfReady = true;
     return yf;
   } catch (err) {
@@ -46,6 +52,27 @@ function toYahooTicker(symbol, exchange = 'NSE') {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Retry wrapper for yahoo-finance2 calls.
+ * Handles 429 rate-limit by backing off and retrying up to maxRetries times.
+ */
+async function withYfRetry(fn, maxRetries = 2, baseDelayMs = 1500) {
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const is429 = err.message?.includes('429') || err.status === 429;
+      if (!is429 || attempt === maxRetries) throw err;
+      const delay = baseDelayMs * Math.pow(2, attempt); // 1.5s, 3s
+      logger.debug(`[Yahoo] 429 rate limit — retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
 }
 
 async function yahooGet(path, params = {}, options = {}, attempt = 1, hostIdx = 0) {
@@ -121,11 +148,11 @@ async function getQuote(symbol, exchange = 'NSE') {
     logger.warn(`[Yahoo] no-crumb quote fetch failed for ${ticker}: ${err.message}`);
   }
 
-  // Fallback to yahoo-finance2 quote (may need crumb/cookie).
+  // Fallback to yahoo-finance2 quote (may need crumb/cookie). Retry on 429.
   const yf = await getYF();
   if (!yf || typeof yf.quote !== 'function') throw new Error('yahoo-finance2 quote not available');
   try {
-    const q = await yf.quote(ticker);
+    const q = await withYfRetry(() => yf.quote(ticker));
     return mapQuoteShape(symbol, exchange, ticker, q);
   } catch (err) {
     logger.error(`[Yahoo] getQuote failed for ${ticker}: ${err.message}`);
@@ -159,13 +186,13 @@ async function getQuotes(symbols, exchange = 'NSE') {
     logger.warn(`[Yahoo] no-crumb getQuotes failed, falling back: ${err.message}`);
   }
 
-  // Fallback path
+  // Fallback path via yahoo-finance2 (with crumb). Retry on 429.
   const yf = await getYF();
   if (!yf || typeof yf.quote !== 'function') throw new Error('yahoo-finance2 quote not available');
   try {
     for (let i = 0; i < tickers.length; i += 20) {
       const batch = tickers.slice(i, i + 20);
-      const results = await yf.quote(batch);
+      const results = await withYfRetry(() => yf.quote(batch));
       const arr = Array.isArray(results) ? results : [results];
       arr.forEach((q, idx) => {
         const globalIdx = i + idx;
@@ -229,29 +256,28 @@ async function getHistory(symbol, exchange = 'NSE', period1 = '6mo', period2 = '
  */
 async function getMarketIndices() {
   const indices = [
-    { key: 'nifty50',   ticker: '^NSEI',   name: 'Nifty 50' },
-    { key: 'sensex',    ticker: '^BSESN',  name: 'Sensex' },
-    { key: 'niftyBank', ticker: '^NSEBANK',name: 'Nifty Bank' },
+    { key: 'nifty50',   ticker: '^NSEI',      name: 'Nifty 50' },
+    { key: 'sensex',    ticker: '^BSESN',     name: 'Sensex' },
+    { key: 'niftyBank', ticker: '^NSEBANK',   name: 'Nifty Bank' },
     { key: 'niftyMid',  ticker: '^CNXMIDCAP', name: 'Nifty Midcap 100' },
-    { key: 'dowJones',  ticker: '^DJI',    name: 'Dow Jones' },
-    { key: 'nasdaq',    ticker: '^IXIC',   name: 'NASDAQ' },
-    { key: 'sp500',     ticker: '^GSPC',   name: 'S&P 500' },
-    { key: 'vix',       ticker: '^NIFVIX', name: 'India VIX' },
-    { key: 'usdInr',    ticker: 'USDINR=X',name: 'USD/INR' },
-    { key: 'goldMcx',   ticker: 'GC=F',    name: 'Gold Futures' },
-    { key: 'crudeMcx',  ticker: 'CL=F',    name: 'Crude Oil' },
+    { key: 'dowJones',  ticker: '^DJI',       name: 'Dow Jones' },
+    { key: 'nasdaq',    ticker: '^IXIC',      name: 'NASDAQ' },
+    { key: 'sp500',     ticker: '^GSPC',      name: 'S&P 500' },
+    { key: 'vix',       ticker: '^NIFVIX',    name: 'India VIX' },
+    { key: 'usdInr',    ticker: 'USDINR=X',   name: 'USD/INR' },
+    { key: 'goldMcx',   ticker: 'GC=F',       name: 'Gold Futures' },
+    { key: 'crudeMcx',  ticker: 'CL=F',       name: 'Crude Oil' },
   ];
 
   const tickers = indices.map(i => i.ticker);
-  const snapshot = {};
+  let snapshot = {};
 
-  try {
-    const arr = await fetchQuotesNoCrumb(tickers);
+  function buildSnapshotFromArr(arr) {
     const byTicker = new Map(arr.map((q) => [q.symbol, q]));
-
+    const out = {};
     indices.forEach((idx, i) => {
       const q = byTicker.get(idx.ticker) || arr[i] || {};
-      snapshot[idx.key] = {
+      out[idx.key] = {
         name:          idx.name,
         ticker:        idx.ticker,
         price:         q.regularMarketPrice,
@@ -260,35 +286,82 @@ async function getMarketIndices() {
         prevClose:     q.regularMarketPreviousClose,
       };
     });
-
-    snapshot.fetchedAt = new Date().toISOString();
-    return snapshot;
-  } catch (err) {
-    logger.warn(`[Yahoo] no-crumb getMarketIndices failed, falling back: ${err.message}`);
+    return out;
   }
 
-  const yf = await getYF();
-  if (!yf || typeof yf.quote !== 'function') throw new Error('yahoo-finance2 quote not available');
+  function hasValidData(snap) {
+    return Object.values(snap).some(v => v && v.price != null);
+  }
+
+  // ── Attempt 1: no-crumb v7 endpoint (fast, no auth) ──────────────────────
   try {
-    const quotes = await yf.quote(tickers);
-    const arr = Array.isArray(quotes) ? quotes : [quotes];
-    indices.forEach((idx, i) => {
-      const q = arr[i] || {};
-      snapshot[idx.key] = {
-        name:          idx.name,
-        ticker:        idx.ticker,
-        price:         q.regularMarketPrice,
-        change:        q.regularMarketChange,
-        changePercent: q.regularMarketChangePercent,
-        prevClose:     q.regularMarketPreviousClose,
-      };
-    });
-    snapshot.fetchedAt = new Date().toISOString();
-    return snapshot;
+    const arr = await fetchQuotesNoCrumb(tickers);
+    snapshot = buildSnapshotFromArr(arr);
+    if (hasValidData(snapshot)) {
+      snapshot.fetchedAt = new Date().toISOString();
+      logger.debug('[Yahoo] getMarketIndices: no-crumb succeeded');
+      return snapshot;
+    }
+    logger.warn('[Yahoo] getMarketIndices: no-crumb returned empty prices, falling back');
   } catch (err) {
-    logger.error(`[Yahoo] getMarketIndices failed: ${err.message}`);
-    return snapshot;
+    logger.warn(`[Yahoo] no-crumb getMarketIndices failed: ${err.message}`);
   }
+
+  // ── Attempt 2: yahoo-finance2 with crumb (handles auth automatically) ────
+  const yf = await getYF();
+  if (yf && typeof yf.quote === 'function') {
+    try {
+      const quotes = await withYfRetry(() => yf.quote(tickers));
+      const arr = Array.isArray(quotes) ? quotes : [quotes];
+      const snap2 = buildSnapshotFromArr(arr);
+      if (hasValidData(snap2)) {
+        snap2.fetchedAt = new Date().toISOString();
+        logger.info('[Yahoo] getMarketIndices: yahoo-finance2 fallback succeeded');
+        return snap2;
+      }
+      logger.warn('[Yahoo] getMarketIndices: yahoo-finance2 returned no prices');
+    } catch (err) {
+      logger.warn(`[Yahoo] yahoo-finance2 getMarketIndices failed: ${err.message}`);
+    }
+  }
+
+  // ── Attempt 3: per-ticker v8 chart fallback (more lenient rate limits) ───
+  // Fetch each ticker individually via the v8/chart endpoint which sometimes
+  // bypasses the quote crumb requirement for index symbols.
+  let filled = 0;
+  for (const idx of indices) {
+    if (snapshot[idx.key]?.price != null) continue; // already have it
+    try {
+      const data = await yahooGet(
+        `/v8/finance/chart/${encodeURIComponent(idx.ticker)}`,
+        { interval: '1d', range: '1d' },
+        { timeout: 6000 }
+      );
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (meta?.regularMarketPrice != null) {
+        snapshot[idx.key] = {
+          name:          idx.name,
+          ticker:        idx.ticker,
+          price:         meta.regularMarketPrice,
+          change:        meta.regularMarketPrice - meta.previousClose,
+          changePercent: ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100,
+          prevClose:     meta.previousClose,
+        };
+        filled++;
+      }
+    } catch {
+      // skip — chart endpoint may also be blocked
+    }
+  }
+  if (filled > 0) {
+    logger.info(`[Yahoo] getMarketIndices: v8/chart filled ${filled} indices`);
+  }
+
+  snapshot.fetchedAt = new Date().toISOString();
+  if (!hasValidData(snapshot)) {
+    logger.error('[Yahoo] getMarketIndices: all sources exhausted, returning empty snapshot');
+  }
+  return snapshot;
 }
 
 /**

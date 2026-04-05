@@ -70,7 +70,13 @@ export interface MarketSnapshot {
   vix:        number | null;
   gold_mcx:   number | null;
   crude_mcx:  number | null;
-  raw_data:   Record<string, { name: string; price: number; change: number; changePercent: number }>;
+  raw_data:   Record<string, {
+    name: string;
+    price: number;
+    change: number;
+    changePercent: number;
+    prevClose?: number | null;
+  }>;
 }
 
 export interface NewsArticle {

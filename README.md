@@ -1,6 +1,7 @@
 # Investment Agent
 
 An AI-powered portfolio analysis agent for Indian markets. Tracks your investments across stocks, mutual funds, ETFs, FDs, bonds, and more — then delivers intelligent morning and evening briefs via Telegram, WhatsApp, and Email.
+This app will tell you action items on your stocks/ holding based on your goal and current market state, so that your goals are achived and holding are always optimal. 
 
 ## Features
 

@@ -16,6 +16,7 @@
     "analyze": "node index.js analyze",
     "status": "node index.js status",
     "notify:test": "node index.js notify test",
+    "test": "node --test",
     "install:all": "npm install && npm install --prefix pwa"
   },
   "config": {

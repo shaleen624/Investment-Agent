@@ -11,6 +11,57 @@ const fs     = require('fs');
 const path   = require('path');
 const logger = require('../config/logger');
 
+function parseNumeric(value) {
+  if (value == null) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+
+  const text = String(value).trim();
+  if (!text) return 0;
+
+  const negative = /^\(.*\)$/.test(text);
+  const cleaned = text
+    .replace(/\((.*)\)/, '$1')
+    .replace(/[₹,\s]/g, '')
+    .replace(/--+/g, '');
+
+  const parsed = parseFloat(cleaned);
+  if (!Number.isFinite(parsed)) return 0;
+  return negative ? -parsed : parsed;
+}
+
+function normalizeRowKeys(row = {}) {
+  const normalized = {};
+  for (const [key, value] of Object.entries(row)) {
+    const cleanKey = key.replace(/\uFEFF/g, '').trim();
+    normalized[cleanKey] = value;
+  }
+  return normalized;
+}
+
+function validateHolding(holding, rowIndex, source) {
+  const errors = [];
+
+  if (!holding.name && !holding.symbol) {
+    errors.push('missing symbol/name');
+  }
+  if (!(holding.quantity > 0)) {
+    errors.push('quantity must be > 0');
+  }
+  if (holding.avg_buy_price < 0) {
+    errors.push('avg_buy_price cannot be negative');
+  }
+  if (holding.invested_amount < 0) {
+    errors.push('invested_amount cannot be negative');
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    rowIndex,
+    source,
+  };
+}
+
 let pdfParse, Papa;
 try { pdfParse = require('pdf-parse'); } catch { logger.warn('[Parser] pdf-parse not installed'); }
 try { Papa     = require('papaparse'); } catch { logger.warn('[Parser] papaparse not installed'); }
@@ -39,16 +90,37 @@ try { Papa     = require('papaparse'); } catch { logger.warn('[Parser] papaparse
 function parseKiteCSV(text) {
   if (!Papa) throw new Error('papaparse not installed');
   const { data } = Papa.parse(text, { header: true, skipEmptyLines: true });
-  return data.map(row => ({
-    asset_type:     'equity',
-    symbol:         row['Tradingsymbol']?.trim() || row['Symbol']?.trim(),
-    name:           row['Instrument']?.trim()    || row['Tradingsymbol']?.trim(),
-    exchange:       row['Exchange']?.trim()      || 'NSE',
-    quantity:       parseFloat(row['Quantity'])  || 0,
-    avg_buy_price:  parseFloat(row['Average price'] || row['Avg. price'] || '0') || 0,
-    invested_amount:parseFloat(row['P&L'])       || 0,
-    broker:         'kite',
-  })).filter(h => h.symbol && h.quantity > 0);
+
+  const valid = [];
+  const warnings = [];
+
+  data.forEach((rawRow, index) => {
+    const row = normalizeRowKeys(rawRow);
+    const quantity = parseNumeric(row['Quantity']);
+    const avgBuyPrice = parseNumeric(row['Average price'] || row['Avg. price']);
+    const investedAmount = quantity * avgBuyPrice;
+
+    const holding = {
+      asset_type: 'equity',
+      symbol: row['Tradingsymbol']?.trim() || row['Symbol']?.trim() || null,
+      name: row['Instrument']?.trim() || row['Tradingsymbol']?.trim() || row['Symbol']?.trim() || null,
+      exchange: row['Exchange']?.trim() || 'NSE',
+      quantity,
+      avg_buy_price: avgBuyPrice,
+      invested_amount: investedAmount,
+      broker: 'kite',
+    };
+
+    const check = validateHolding(holding, index + 2, 'kite-csv');
+    if (check.ok) valid.push(holding);
+    else warnings.push(`Row ${check.rowIndex}: ${check.errors.join(', ')}`);
+  });
+
+  if (warnings.length) {
+    logger.warn(`[Parser] Kite CSV skipped ${warnings.length} invalid row(s): ${warnings.slice(0, 5).join(' | ')}${warnings.length > 5 ? ' | ...' : ''}`);
+  }
+
+  return valid;
 }
 
 /**
@@ -57,24 +129,43 @@ function parseKiteCSV(text) {
 function parseGrowwCSV(text) {
   if (!Papa) throw new Error('papaparse not installed');
   const { data } = Papa.parse(text, { header: true, skipEmptyLines: true });
-  return data.map(row => {
-    const assetType = (row['Type'] || row['Asset Type'] || '').toLowerCase().includes('mutual')
-      ? 'mutual_fund'
-      : 'equity';
 
-    return {
-      asset_type:     assetType,
-      symbol:         row['Symbol'] || row['ISIN'] || row['Scheme Code'],
-      name:           row['Company Name'] || row['Scheme Name'] || row['Name'],
-      exchange:       row['Exchange'] || 'NSE',
-      quantity:       parseFloat(row['Shares'] || row['Units'] || '0') || 0,
-      avg_buy_price:  parseFloat(row['Avg. Buy Price'] || row['Buy NAV'] || '0') || 0,
-      invested_amount:parseFloat(row['Total Investment'] || row['Invested Amount'] || '0') || 0,
-      units:          parseFloat(row['Units'] || '0') || null,
-      folio_number:   row['Folio No'] || null,
-      broker:         'groww',
+  const valid = [];
+  const warnings = [];
+
+  data.forEach((rawRow, index) => {
+    const row = normalizeRowKeys(rawRow);
+    const typeText = (row['Type'] || row['Asset Type'] || '').toLowerCase();
+    const assetType = typeText.includes('mutual') ? 'mutual_fund' : 'equity';
+
+    const quantity = parseNumeric(row['Shares'] || row['Units']);
+    const avgBuyPrice = parseNumeric(row['Avg. Buy Price'] || row['Buy NAV']);
+    const investedFromFile = parseNumeric(row['Total Investment'] || row['Invested Amount']);
+    const investedAmount = investedFromFile > 0 ? investedFromFile : quantity * avgBuyPrice;
+
+    const holding = {
+      asset_type: assetType,
+      symbol: (row['Symbol'] || row['ISIN'] || row['Scheme Code'] || '').trim() || null,
+      name: (row['Company Name'] || row['Scheme Name'] || row['Name'] || '').trim() || null,
+      exchange: (row['Exchange'] || '').trim() || (assetType === 'mutual_fund' ? '' : 'NSE'),
+      quantity,
+      avg_buy_price: avgBuyPrice,
+      invested_amount: investedAmount,
+      units: assetType === 'mutual_fund' ? quantity : null,
+      folio_number: (row['Folio No'] || row['Folio Number'] || '').trim() || null,
+      broker: 'groww',
     };
-  }).filter(h => h.name && h.quantity > 0);
+
+    const check = validateHolding(holding, index + 2, 'groww-csv');
+    if (check.ok) valid.push(holding);
+    else warnings.push(`Row ${check.rowIndex}: ${check.errors.join(', ')}`);
+  });
+
+  if (warnings.length) {
+    logger.warn(`[Parser] Groww CSV skipped ${warnings.length} invalid row(s): ${warnings.slice(0, 5).join(' | ')}${warnings.length > 5 ? ' | ...' : ''}`);
+  }
+
+  return valid;
 }
 
 /**
@@ -85,8 +176,8 @@ function parseGenericCSV(text) {
   const { data, meta } = Papa.parse(text, { header: true, skipEmptyLines: true });
   if (!data.length) return [];
 
-  const headers = (meta.fields || []).map(h => h.toLowerCase());
-  const col = name => meta.fields?.find(h => h.toLowerCase().includes(name)) || null;
+  const fields = (meta.fields || []).map(f => f.replace(/\uFEFF/g, '').trim());
+  const col = name => fields.find(h => h.toLowerCase().includes(name)) || null;
 
   const symbolCol   = col('symbol') || col('ticker') || col('scrip') || col('isin');
   const nameCol     = col('name') || col('company') || col('instrument') || col('scheme');
@@ -95,27 +186,55 @@ function parseGenericCSV(text) {
   const amtCol      = col('amount') || col('investment') || col('invested') || col('value');
   const exchangeCol = col('exchange');
   const typeCol     = col('type') || col('asset');
+  const folioCol    = col('folio');
 
-  return data.map(row => {
+  if (!qtyCol || (!symbolCol && !nameCol)) {
+    throw new Error('CSV missing required columns. Expected at least quantity and symbol/name columns.');
+  }
+
+  const valid = [];
+  const warnings = [];
+
+  data.forEach((rawRow, index) => {
+    const row = normalizeRowKeys(rawRow);
     const rawType = typeCol ? (row[typeCol] || '').toLowerCase() : '';
     let asset_type = 'equity';
     if (rawType.includes('mutual') || rawType.includes('mf') || rawType.includes('fund')) asset_type = 'mutual_fund';
-    else if (rawType.includes('etf'))    asset_type = 'etf';
-    else if (rawType.includes('bond'))   asset_type = 'bond';
+    else if (rawType.includes('etf')) asset_type = 'etf';
+    else if (rawType.includes('bond')) asset_type = 'bond';
     else if (rawType.includes('crypto')) asset_type = 'crypto';
     else if (rawType.includes('fd') || rawType.includes('deposit')) asset_type = 'fd';
 
-    return {
+    const quantity = parseNumeric(qtyCol ? row[qtyCol] : 0);
+    const avgBuyPrice = parseNumeric(priceCol ? row[priceCol] : 0);
+    const amountFromCsv = parseNumeric(amtCol ? row[amtCol] : 0);
+    const investedAmount = amountFromCsv > 0 ? amountFromCsv : quantity * avgBuyPrice;
+
+    const holding = {
       asset_type,
-      symbol:          symbolCol ? row[symbolCol]?.trim()       : null,
-      name:            nameCol   ? row[nameCol]?.trim()         : (symbolCol ? row[symbolCol]?.trim() : 'Unknown'),
-      exchange:        exchangeCol ? row[exchangeCol]?.trim()   : 'NSE',
-      quantity:        qtyCol  ? parseFloat(row[qtyCol])   || 0 : 0,
-      avg_buy_price:   priceCol? parseFloat(row[priceCol]) || 0 : 0,
-      invested_amount: amtCol  ? parseFloat(row[amtCol])  || 0 : 0,
-      broker:          'manual',
+      symbol: symbolCol ? String(row[symbolCol] || '').trim() || null : null,
+      name: nameCol
+        ? String(row[nameCol] || '').trim() || (symbolCol ? String(row[symbolCol] || '').trim() : null)
+        : (symbolCol ? String(row[symbolCol] || '').trim() : null),
+      exchange: exchangeCol ? String(row[exchangeCol] || '').trim() || 'NSE' : (asset_type === 'mutual_fund' ? '' : 'NSE'),
+      quantity,
+      avg_buy_price: avgBuyPrice,
+      invested_amount: investedAmount,
+      folio_number: folioCol ? String(row[folioCol] || '').trim() || null : null,
+      units: asset_type === 'mutual_fund' ? quantity : null,
+      broker: 'manual',
     };
-  }).filter(h => h.name && h.quantity > 0);
+
+    const check = validateHolding(holding, index + 2, 'generic-csv');
+    if (check.ok) valid.push(holding);
+    else warnings.push(`Row ${check.rowIndex}: ${check.errors.join(', ')}`);
+  });
+
+  if (warnings.length) {
+    logger.warn(`[Parser] Generic CSV skipped ${warnings.length} invalid row(s): ${warnings.slice(0, 5).join(' | ')}${warnings.length > 5 ? ' | ...' : ''}`);
+  }
+
+  return valid;
 }
 
 // ── PDF Parser ────────────────────────────────────────────────────────────────
@@ -292,10 +411,15 @@ async function parseFile(filePath) {
   }
 
   if (ext === '.csv') {
-    // Detect format from header
-    if (content.includes('Tradingsymbol') || content.includes('Average price')) return parseKiteCSV(content);
-    if (content.includes('Scheme Name')   || content.includes('Folio No'))      return parseGrowwCSV(content);
-    return parseGenericCSV(content);
+    const normalized = (content || '').replace(/^\uFEFF/, '');
+    if (!normalized.trim()) {
+      throw new Error('CSV file is empty.');
+    }
+
+    if (normalized.includes('Tradingsymbol') || normalized.includes('Average price')) return parseKiteCSV(normalized);
+    if (normalized.includes('Scheme Name') || normalized.includes('Folio No') || normalized.includes('Avg. Buy Price')) return parseGrowwCSV(normalized);
+
+    return parseGenericCSV(normalized);
   }
 
   if (ext === '.txt' || ext === '.text' || ext === '') {

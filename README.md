@@ -130,6 +130,17 @@ Uses [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js) (open sou
 Groww's official API is not yet public. Use CSV export:
 - App → Portfolio → Export → upload via `node index.js portfolio` → Import from file
 
+### CDSL/NSDL
+There is no broadly available direct investor API from CDSL/NSDL in this project by default.
+This codebase now supports two modes:
+- `CAS_PARSER_API_KEY` configured: API-assisted parsing and CDSL OTP fetch flow endpoints
+- No API key: robust local PDF CAS parsing fallback (manual upload)
+
+API endpoints:
+- `POST /api/portfolio/import/file` — upload CAS PDF (works in both modes)
+- `POST /api/portfolio/sync/cdsl/start` — start CDSL OTP flow (`{ boId, pan? }`)
+- `POST /api/portfolio/sync/cdsl/verify` — verify OTP and import holdings (`{ sessionId, otp }`)
+
 ---
 
 ## Portfolio Input Formats

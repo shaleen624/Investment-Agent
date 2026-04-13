@@ -105,6 +105,11 @@ const config = {
       apiKey:  get('GROWW_API_KEY'),
       enabled: !!get('GROWW_API_KEY'),
     },
+    casParser: {
+      apiKey: get('CAS_PARSER_API_KEY'),
+      baseUrl: get('CAS_PARSER_BASE_URL', 'https://api.casparser.in'),
+      enabled: !!get('CAS_PARSER_API_KEY'),
+    },
   },
 
   // ── Notifications ─────────────────────────────────────────────────────────
@@ -174,6 +179,9 @@ function validate() {
   }
   if (!config.news.newsApi.enabled) {
     warnings.push('NEWS_API_KEY not set — falling back to RSS only');
+  }
+  if (!config.brokers.casParser.enabled) {
+    warnings.push('CAS_PARSER_API_KEY not set — CDSL/NSDL direct sync disabled, using local PDF parsing fallback');
   }
 
   const activeChannels = config.notifications.channels;

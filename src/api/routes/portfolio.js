@@ -7,6 +7,8 @@ const path   = require('path');
 const fs     = require('fs');
 const multer = require('multer');
 
+const { casParserBroker } = require('../../sources/brokers/casparser');
+
 const r = Router();
 
 // File upload (PDF/CSV imports)
@@ -95,6 +97,49 @@ r.post('/prices/refresh', async (_req, res) => {
   res.json(result);
 });
 
+// POST /api/portfolio/sync/cdsl/start
+// body: { boId: string, pan?: string }
+r.post('/sync/cdsl/start', async (req, res) => {
+  try {
+    if (!casParserBroker.isConfigured()) {
+      return res.status(400).json({
+        error: 'CDSL direct sync is not configured. Set CAS_PARSER_API_KEY to enable API-based sync.',
+      });
+    }
+
+    const payload = await casParserBroker.startCdslFetch({
+      boId: req.body?.boId,
+      pan: req.body?.pan,
+    });
+
+    res.json(payload);
+  } catch (err) {
+    res.status(422).json({ error: err.message });
+  }
+});
+
+// POST /api/portfolio/sync/cdsl/verify
+// body: { sessionId: string, otp: string }
+r.post('/sync/cdsl/verify', async (req, res) => {
+  try {
+    if (!casParserBroker.isConfigured()) {
+      return res.status(400).json({
+        error: 'CDSL direct sync is not configured. Set CAS_PARSER_API_KEY to enable API-based sync.',
+      });
+    }
+
+    const { data, holdings } = await casParserBroker.verifyCdslFetch({
+      sessionId: req.body?.sessionId,
+      otp: req.body?.otp,
+    });
+
+    const result = pm.upsertHoldings(holdings);
+    res.json({ synced: holdings.length, ...result, providerResponse: data });
+  } catch (err) {
+    res.status(422).json({ error: err.message });
+  }
+});
+
 // POST /api/portfolio/sync/:broker
 r.post('/sync/:broker', async (req, res) => {
   const broker = req.params.broker;
@@ -103,10 +148,14 @@ r.post('/sync/:broker', async (req, res) => {
     if (broker === 'kite') {
       const kite = require('../../sources/brokers/kite');
       const [eq, mf] = await Promise.allSettled([kite.getHoldings(), kite.getMFHoldings()]);
-      holdings = [...(eq.value||[]), ...(mf.value||[])];
+      holdings = [...(eq.value || []), ...(mf.value || [])];
     } else if (broker === 'groww') {
       const groww = require('../../sources/brokers/groww');
       holdings = await groww.getHoldings();
+    } else if (broker === 'cdsl' || broker === 'nsdl') {
+      return res.status(400).json({
+        error: `${broker.toUpperCase()} direct sync requires OTP flow endpoints: /api/portfolio/sync/cdsl/start and /api/portfolio/sync/cdsl/verify. For NSDL, upload CAS PDF via /api/portfolio/import/file.`,
+      });
     } else {
       return res.status(400).json({ error: `Unknown broker: ${broker}` });
     }

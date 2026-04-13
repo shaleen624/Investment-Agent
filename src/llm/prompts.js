@@ -16,9 +16,17 @@ function buildPortfolioContext(summary) {
     `Total Invested: ₹${summary.totalInvested.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
     `Current Value:  ₹${summary.totalCurrent.toLocaleString('en-IN',  { maximumFractionDigits: 0 })}`,
     `Unrealized P&L: ₹${summary.unrealizedPnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })} (${summary.pnlPercent.toFixed(2)}%)`,
-    '',
-    '── Allocation by Asset Type ──',
   ];
+
+  if (summary.taxPnl) {
+    lines.push(
+      `Realized STCG (FIFO): ₹${(summary.taxPnl.stcg || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+      `Realized LTCG (FIFO): ₹${(summary.taxPnl.ltcg || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+      `Total Realized Tax P&L: ₹${(summary.taxPnl.totalRealized || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+    );
+  }
+
+  lines.push('', '── Allocation by Asset Type ──');
 
   for (const [type, data] of Object.entries(summary.byType || {})) {
     const pct = summary.totalInvested > 0 ? (data.invested / summary.totalInvested * 100).toFixed(1) : '0';

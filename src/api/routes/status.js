@@ -33,8 +33,13 @@ r.get('/', (_req, res) => {
       timezone:    profile?.timezone     || config.scheduler.timezone,
     },
     portfolio: summary
-      ? { holdings: summary.holdingsCount, totalInvested: summary.totalInvested,
-          totalCurrent: summary.totalCurrent, pnlPercent: summary.pnlPercent }
+      ? {
+          holdings: summary.holdingsCount,
+          totalInvested: summary.totalInvested,
+          totalCurrent: summary.totalCurrent,
+          pnlPercent: summary.pnlPercent,
+          taxPnl: summary.taxPnl,
+        }
       : null,
     goals:    goals.length,
     warnings,

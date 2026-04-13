@@ -23,9 +23,13 @@ async function portfolioCLI() {
 
     if (summary) {
       const pnlColor = summary.unrealizedPnl >= 0 ? chalk.green : chalk.red;
+      const stcgColor = (summary.taxPnl?.stcg || 0) >= 0 ? chalk.green : chalk.red;
+      const ltcgColor = (summary.taxPnl?.ltcg || 0) >= 0 ? chalk.green : chalk.red;
       console.log(`\n  Total Invested: ${chalk.white('₹' + summary.totalInvested.toLocaleString('en-IN'))}`);
       console.log(`  Current Value:  ${chalk.white('₹' + summary.totalCurrent.toLocaleString('en-IN'))}`);
       console.log(`  Unrealized P&L: ${pnlColor('₹' + summary.unrealizedPnl.toLocaleString('en-IN') + ' (' + summary.pnlPercent.toFixed(2) + '%)')}`);
+      console.log(`  Realized STCG:  ${stcgColor('₹' + (summary.taxPnl?.stcg || 0).toLocaleString('en-IN'))}`);
+      console.log(`  Realized LTCG:  ${ltcgColor('₹' + (summary.taxPnl?.ltcg || 0).toLocaleString('en-IN'))}`);
       console.log(`  Holdings:       ${summary.holdingsCount}\n`);
     } else {
       console.log(chalk.yellow('\n  No holdings yet.\n'));

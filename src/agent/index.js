@@ -40,11 +40,15 @@ function getTelegramHandlers() {
       if (!summary) return ctx.reply('No portfolio data. Add holdings via CLI: node index.js portfolio');
 
       const pnlSign = summary.unrealizedPnl >= 0 ? '+' : '';
+      const stcgSign = (summary.taxPnl?.stcg || 0) >= 0 ? '+' : '';
+      const ltcgSign = (summary.taxPnl?.ltcg || 0) >= 0 ? '+' : '';
       const msg = [
         `*Portfolio Summary*`,
         `Invested: ₹${summary.totalInvested.toLocaleString('en-IN')}`,
         `Current:  ₹${summary.totalCurrent.toLocaleString('en-IN')}`,
         `P&L:      ₹${pnlSign}${summary.unrealizedPnl.toLocaleString('en-IN')} (${pnlSign}${summary.pnlPercent.toFixed(2)}%)`,
+        `STCG:     ₹${stcgSign}${(summary.taxPnl?.stcg || 0).toLocaleString('en-IN')} (FIFO)`,
+        `LTCG:     ₹${ltcgSign}${(summary.taxPnl?.ltcg || 0).toLocaleString('en-IN')} (FIFO)`,
         `Holdings: ${summary.holdingsCount}`,
       ].join('\n');
       ctx.reply(msg, { parse_mode: 'Markdown' });

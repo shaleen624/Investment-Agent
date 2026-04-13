@@ -267,6 +267,156 @@ function upsertProfile(profile) {
 
 // ── Analytics Helpers ─────────────────────────────────────────────────────────
 
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const LONG_TERM_DAYS = 365;
+
+function normalizeTxType(type) {
+  if (type === 'buy' || type === 'sip') return 'buy';
+  if (type === 'sell' || type === 'redemption') return 'sell';
+  return 'other';
+}
+
+/**
+ * Build FIFO tax-lot data from transactions and compute realized STCG/LTCG.
+ */
+function computeTaxPnlFromTransactions(txns = []) {
+  const lotsByHolding = new Map();
+  const realizedByHolding = new Map();
+  const realizedEvents = [];
+
+  const initHolding = (holdingId) => {
+    if (!lotsByHolding.has(holdingId)) lotsByHolding.set(holdingId, []);
+    if (!realizedByHolding.has(holdingId)) {
+      realizedByHolding.set(holdingId, {
+        realizedStcg: 0,
+        realizedLtcg: 0,
+        realizedTotal: 0,
+        sellQuantity: 0,
+      });
+    }
+  };
+
+  for (const tx of txns) {
+    const holdingId = tx.holding_id;
+    const normalizedType = normalizeTxType(tx.type);
+    if (!holdingId || normalizedType === 'other') continue;
+
+    initHolding(holdingId);
+    const lots = lotsByHolding.get(holdingId);
+
+    const qty = Number(tx.quantity) || 0;
+    const fees = Number(tx.fees) || 0;
+    const amount = Number(tx.amount) || 0;
+
+    if (normalizedType === 'buy') {
+      if (qty <= 0) continue;
+      const buyPrice = Number(tx.price) || (amount > 0 ? amount / qty : 0);
+      const unitCost = qty > 0 ? (amount + fees) / qty : buyPrice;
+      lots.push({
+        lotDate: tx.date,
+        quantityTotal: qty,
+        quantityRemaining: qty,
+        unitCost,
+        sourceTransactionId: tx.id,
+      });
+      continue;
+    }
+
+    if (normalizedType === 'sell') {
+      if (qty <= 0) continue;
+
+      let qtyToMatch = qty;
+      const sellPrice = Number(tx.price) || (qty > 0 ? amount / qty : 0);
+      const unitProceeds = qty > 0 ? (amount - fees) / qty : sellPrice;
+
+      while (qtyToMatch > 0 && lots.length > 0) {
+        const lot = lots[0];
+        if (lot.quantityRemaining <= 0) {
+          lots.shift();
+          continue;
+        }
+
+        const matchedQty = Math.min(qtyToMatch, lot.quantityRemaining);
+        const lotDate = new Date(lot.lotDate);
+        const sellDate = new Date(tx.date);
+        const holdDays = Math.max(0, Math.floor((sellDate - lotDate) / ONE_DAY_MS));
+        const gain = (unitProceeds - lot.unitCost) * matchedQty;
+        const bucket = holdDays > LONG_TERM_DAYS ? 'ltcg' : 'stcg';
+
+        const realized = realizedByHolding.get(holdingId);
+        if (bucket === 'ltcg') realized.realizedLtcg += gain;
+        else realized.realizedStcg += gain;
+        realized.realizedTotal += gain;
+        realized.sellQuantity += matchedQty;
+
+        realizedEvents.push({
+          holding_id: holdingId,
+          sell_transaction_id: tx.id,
+          buy_transaction_id: lot.sourceTransactionId,
+          buy_date: lot.lotDate,
+          sell_date: tx.date,
+          quantity: matchedQty,
+          buy_price: lot.unitCost,
+          sell_price: unitProceeds,
+          gain,
+          holding_days: holdDays,
+          gain_type: bucket,
+        });
+
+        lot.quantityRemaining -= matchedQty;
+        qtyToMatch -= matchedQty;
+        if (lot.quantityRemaining <= 0) lots.shift();
+      }
+    }
+  }
+
+  let realizedStcg = 0;
+  let realizedLtcg = 0;
+  let realizedTotal = 0;
+
+  for (const values of realizedByHolding.values()) {
+    realizedStcg += values.realizedStcg;
+    realizedLtcg += values.realizedLtcg;
+    realizedTotal += values.realizedTotal;
+  }
+
+  const openLots = [];
+  for (const [holdingId, lots] of lotsByHolding.entries()) {
+    lots
+      .filter(lot => lot.quantityRemaining > 0)
+      .forEach(lot => {
+        openLots.push({
+          holding_id: holdingId,
+          lot_date: lot.lotDate,
+          quantity_total: lot.quantityTotal,
+          quantity_remaining: lot.quantityRemaining,
+          unit_cost: lot.unitCost,
+          source_transaction_id: lot.sourceTransactionId,
+        });
+      });
+  }
+
+  return {
+    realizedStcg,
+    realizedLtcg,
+    realizedTotal,
+    byHolding: Object.fromEntries(realizedByHolding.entries()),
+    events: realizedEvents,
+    openLots,
+  };
+}
+
+function calculateTaxPnl() {
+  const txns = dbAll(
+    `SELECT id, holding_id, type, quantity, price, amount, fees, date
+     FROM transactions
+     WHERE holding_id IS NOT NULL
+     ORDER BY date ASC, id ASC`
+  );
+
+  return computeTaxPnlFromTransactions(txns);
+}
+
 /**
  * Compute portfolio summary: total invested, current value, P&L, allocation.
  */
@@ -274,6 +424,7 @@ function getPortfolioSummary() {
   const holdings = getAllHoldings();
   if (!holdings.length) return null;
 
+  const taxPnl = calculateTaxPnl();
   let totalInvested = 0;
   let totalCurrent  = 0;
   const byType      = {};
@@ -303,6 +454,23 @@ function getPortfolioSummary() {
   const unrealizedPnl = totalCurrent - totalInvested;
   const pnlPercent    = totalInvested > 0 ? (unrealizedPnl / totalInvested) * 100 : 0;
 
+  const holdingsWithTax = holdings.map(h => {
+    const tax = taxPnl.byHolding[h.id] || {
+      realizedStcg: 0,
+      realizedLtcg: 0,
+      realizedTotal: 0,
+      sellQuantity: 0,
+    };
+
+    return {
+      ...h,
+      realized_stcg: tax.realizedStcg,
+      realized_ltcg: tax.realizedLtcg,
+      realized_tax_pnl: tax.realizedTotal,
+      realized_sell_quantity: tax.sellQuantity,
+    };
+  });
+
   return {
     totalInvested,
     totalCurrent,
@@ -311,7 +479,16 @@ function getPortfolioSummary() {
     holdingsCount: holdings.length,
     byType,
     bySector,
-    holdings,
+    holdings: holdingsWithTax,
+    taxPnl: {
+      method: 'FIFO',
+      stcg: taxPnl.realizedStcg,
+      ltcg: taxPnl.realizedLtcg,
+      totalRealized: taxPnl.realizedTotal,
+      lotsOpen: taxPnl.openLots.length,
+      openLots: taxPnl.openLots,
+      realizedEvents: taxPnl.events,
+    },
   };
 }
 
@@ -366,5 +543,7 @@ module.exports = {
   getProfile,
   upsertProfile,
   getPortfolioSummary,
+  computeTaxPnlFromTransactions,
+  calculateTaxPnl,
   calculateXIRR,
 };

@@ -344,7 +344,9 @@ function generateFallbackMorningBrief(summary, snapshot, newsItems, goals) {
   if (summary) {
     lines.push('## Portfolio Status');
     lines.push(`- Total Value:    ₹${(summary.totalCurrent || 0).toLocaleString('en-IN')}`);
-    lines.push(`- Unrealized P&L: ₹${(summary.unrealizedPnl || 0).toLocaleString('en-IN')} (${(summary.pnlPercent || 0).toFixed(2)}%)\n`);
+    lines.push(`- Unrealized P&L: ₹${(summary.unrealizedPnl || 0).toLocaleString('en-IN')} (${(summary.pnlPercent || 0).toFixed(2)}%)`);
+    lines.push(`- STCG (FIFO):    ₹${(summary.taxPnl?.stcg || 0).toLocaleString('en-IN')}`);
+    lines.push(`- LTCG (FIFO):    ₹${(summary.taxPnl?.ltcg || 0).toLocaleString('en-IN')}\n`);
   }
 
   if (newsItems && newsItems.length) {
@@ -370,7 +372,9 @@ function generateFallbackEveningBrief(summary, snapshot, newsItems, goals) {
   if (summary) {
     lines.push('## Portfolio End-of-Day');
     lines.push(`- Total Value:    ₹${(summary.totalCurrent || 0).toLocaleString('en-IN')}`);
-    lines.push(`- Unrealized P&L: ₹${(summary.unrealizedPnl || 0).toLocaleString('en-IN')} (${(summary.pnlPercent || 0).toFixed(2)}%)\n`);
+    lines.push(`- Unrealized P&L: ₹${(summary.unrealizedPnl || 0).toLocaleString('en-IN')} (${(summary.pnlPercent || 0).toFixed(2)}%)`);
+    lines.push(`- STCG (FIFO):    ₹${(summary.taxPnl?.stcg || 0).toLocaleString('en-IN')}`);
+    lines.push(`- LTCG (FIFO):    ₹${(summary.taxPnl?.ltcg || 0).toLocaleString('en-IN')}\n`);
 
     lines.push('## Holdings P&L');
     (summary.holdings || [])

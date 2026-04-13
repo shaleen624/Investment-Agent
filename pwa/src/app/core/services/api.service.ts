@@ -3,7 +3,7 @@ import { HttpClient, HttpParams }        from '@angular/common/http';
 import { Observable }                    from 'rxjs';
 import type {
   AgentStatus, PortfolioSummary, Holding,
-  Goal, Brief, MarketSnapshot, NewsArticle, Recommendation,
+  Goal, Brief, MarketSnapshot, NewsArticle, Recommendation, NotificationLogEntry,
 } from '../models';
 
 @Injectable({ providedIn: 'root' })
@@ -21,7 +21,10 @@ export class ApiService {
     return this.http.get<PortfolioSummary>(`${this.base}/portfolio/summary`);
   }
   holdings(type?: string): Observable<Holding[]> {
-    const params = type ? { type } : {};
+    if (!type) {
+      return this.http.get<Holding[]>(`${this.base}/portfolio/holdings`);
+    }
+    const params = new HttpParams().set('type', type);
     return this.http.get<Holding[]>(`${this.base}/portfolio/holdings`, { params });
   }
   holding(id: number): Observable<Holding> {
@@ -109,6 +112,12 @@ export class ApiService {
   // ── Notifications ─────────────────────────────────────────────────────────
   testNotifications(): Observable<Record<string, { ok: boolean; error?: string }>> {
     return this.http.post<any>(`${this.base}/notifications/test`, {});
+  }
+  notificationsLog(limit = 50): Observable<NotificationLogEntry[]> {
+    return this.http.get<NotificationLogEntry[]>(`${this.base}/notifications/log`, { params: { limit: String(limit) } });
+  }
+  sendAlert(message: string): Observable<Record<string, { ok: boolean; error?: string }>> {
+    return this.http.post<any>(`${this.base}/notifications/alert`, { message });
   }
   profile(): Observable<any> {
     return this.http.get(`${this.base}/notifications/profile`);

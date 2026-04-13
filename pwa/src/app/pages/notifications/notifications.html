@@ -1,0 +1,74 @@
+<div class="page notifications-page">
+  <header class="page-header">
+    <h1 class="page-title">Notifications</h1>
+    <button class="btn btn-ghost btn-sm" [disabled]="loading()" (click)="loadLogs()">
+      {{ loading() ? 'Refreshing…' : 'Refresh Log' }}
+    </button>
+  </header>
+
+  <section class="card composer-card">
+    <h2 class="card-title">Send Alert</h2>
+    <p class="card-body">Broadcast a custom message to configured channels.</p>
+
+    <textarea
+      class="input composer-input"
+      rows="4"
+      [value]="message()"
+      (input)="message.set($any($event.target).value)"
+      placeholder="Market volatility alert, SIP reminder, or custom advisory">
+    </textarea>
+
+    <div class="composer-actions">
+      <button class="btn btn-primary" [disabled]="sending() || !message().trim()" (click)="sendAlert()">
+        {{ sending() ? 'Sending…' : 'Send Alert' }}
+      </button>
+    </div>
+
+    @if (sendResult(); as result) {
+      <div class="test-results">
+        @for (entry of (result | keyvalue); track entry.key) {
+          <div class="test-row">
+            <span class="test-channel">{{ entry.key }}</span>
+            <span class="test-status" [ngClass]="$any(entry.value).ok ? 'online' : 'offline'">
+              {{ $any(entry.value).ok ? 'Sent' : ($any(entry.value).error ?? 'Failed') }}
+            </span>
+          </div>
+        }
+      </div>
+    }
+  </section>
+
+  <section class="card log-card">
+    <h2 class="card-title">Delivery Log</h2>
+
+    @if (loading()) {
+      @for (_ of [1,2,3,4,5]; track $index) {
+        <div class="skeleton log-skeleton"></div>
+      }
+    } @else if (logs().length === 0) {
+      <div class="empty-state" style="padding:24px">
+        <div class="empty-title">No notifications logged yet</div>
+        <div class="empty-body">Send a test from Settings or broadcast an alert.</div>
+      </div>
+    } @else {
+      <div class="log-list">
+        @for (entry of logs(); track entry.id) {
+          <article class="log-item">
+            <div class="log-main">
+              <div class="log-meta">
+                <span class="channel chip">{{ entry.channel }}</span>
+                <span class="badge badge-{{ statusClass(entry.status) }}">{{ entry.status }}</span>
+                <span class="timestamp">{{ entry.sent_at | date:'dd MMM, HH:mm' }}</span>
+              </div>
+              <div class="log-message">{{ entry.message }}</div>
+              <div class="log-recipient">To: {{ entry.recipient || 'default recipient' }}</div>
+            </div>
+            @if (entry.error) {
+              <div class="log-error">{{ entry.error }}</div>
+            }
+          </article>
+        }
+      </div>
+    }
+  </section>
+</div>

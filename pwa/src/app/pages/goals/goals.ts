@@ -1,5 +1,4 @@
 import { Component, inject, signal, computed } from '@angular/core';
-import { NgClass }                             from '@angular/common';
 import { FormsModule }                         from '@angular/forms';
 import { ApiService }                          from '../../core/services/api.service';
 import { InrPipe }                             from '../../shared/pipes/inr.pipe';
@@ -9,7 +8,7 @@ import { catchError, of }                      from 'rxjs';
 @Component({
   selector:    'app-goals',
   standalone:  true,
-  imports:     [NgClass, FormsModule, InrPipe],
+  imports:     [FormsModule, InrPipe],
   templateUrl: './goals.html',
   styleUrl:    './goals.scss',
 })

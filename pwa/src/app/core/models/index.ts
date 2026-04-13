@@ -97,6 +97,16 @@ export interface Recommendation {
   date:         string;
 }
 
+export interface NotificationLogEntry {
+  id:         number;
+  channel:    string;
+  recipient:  string | null;
+  status:     string;
+  message:    string;
+  error:      string | null;
+  sent_at:    string;
+}
+
 export interface AgentStatus {
   ok:            boolean;
   llm:           { provider: string; available: boolean };

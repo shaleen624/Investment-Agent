@@ -127,8 +127,12 @@ Uses [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js) (open sou
 4. Set `KITE_ACCESS_TOKEN` (valid for 1 trading day)
 
 ### Groww
-Groww's official API is not yet public. Use CSV export:
-- App → Portfolio → Export → upload via `node index.js portfolio` → Import from file
+Groww Trade API is available for supported accounts:
+1. Generate a Groww API access token from the Groww Trade API portal.
+2. Set `GROWW_API_KEY` in `.env`.
+3. Run `node index.js portfolio` → `Sync from broker` → `Groww`.
+
+Fallback (works for all users): export portfolio CSV from app and import via `node index.js portfolio`.
 
 ---
 

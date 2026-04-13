@@ -103,7 +103,10 @@ r.post('/sync/:broker', async (req, res) => {
     if (broker === 'kite') {
       const kite = require('../../sources/brokers/kite');
       const [eq, mf] = await Promise.allSettled([kite.getHoldings(), kite.getMFHoldings()]);
-      holdings = [...(eq.value||[]), ...(mf.value||[])];
+      holdings = [
+        ...(eq.status === 'fulfilled' ? eq.value : []),
+        ...(mf.status === 'fulfilled' ? mf.value : []),
+      ];
     } else if (broker === 'groww') {
       const groww = require('../../sources/brokers/groww');
       holdings = await groww.getHoldings();

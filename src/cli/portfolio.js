@@ -40,7 +40,7 @@ async function portfolioCLI() {
         { name: '📊 View allocation breakdown',   value: 'alloc'   },
         { name: '➕ Add holding manually',        value: 'add'     },
         { name: '📁 Import from file (CSV/PDF)',  value: 'import'  },
-        { name: '🔄 Sync from broker (Kite)',     value: 'sync'    },
+        { name: '🔄 Sync from broker (Kite/Groww)', value: 'sync'    },
         { name: '✏️  Edit holding',               value: 'edit'    },
         { name: '🗑️  Delete holding',             value: 'delete'  },
         { name: '💰 Refresh prices',              value: 'refresh' },
@@ -244,35 +244,69 @@ async function importFromFile() {
 
 async function syncFromBroker() {
   const kite = require('../sources/brokers/kite');
+  const groww = require('../sources/brokers/groww');
 
-  if (!kite.isConfigured()) {
-    console.log(chalk.yellow('\n⚠ Kite not configured. Set KITE_API_KEY and KITE_ACCESS_TOKEN in .env\n'));
-    console.log('Steps:');
-    console.log('  1. Enable Kite Connect API at: https://kite.trade/');
-    console.log('  2. Add KITE_API_KEY and KITE_API_SECRET to .env');
-    console.log('  3. Login URL: ' + chalk.cyan(kite.getLoginUrl()));
-    console.log('  4. After login, pass request_token to kite.generateSession()\n');
+  const { broker } = await inquirer.prompt([{
+    type: 'list',
+    name: 'broker',
+    message: 'Select broker to sync from:',
+    choices: [
+      { name: 'Kite', value: 'kite' },
+      { name: 'Groww', value: 'groww' },
+    ],
+  }]);
+
+  if (broker === 'kite') {
+    if (!kite.isConfigured()) {
+      console.log(chalk.yellow('\n⚠ Kite not configured. Set KITE_API_KEY and KITE_ACCESS_TOKEN in .env\n'));
+      console.log('Steps:');
+      console.log('  1. Enable Kite Connect API at: https://kite.trade/');
+      console.log('  2. Add KITE_API_KEY and KITE_API_SECRET to .env');
+      console.log('  3. Login URL: ' + chalk.cyan(kite.getLoginUrl()));
+      console.log('  4. After login, pass request_token to kite.generateSession()\n');
+      return;
+    }
+
+    console.log(chalk.gray('\nFetching from Kite...'));
+    try {
+      const [equities, mfHoldings] = await Promise.allSettled([
+        kite.getHoldings(),
+        kite.getMFHoldings(),
+      ]);
+
+      const all = [
+        ...(equities.status === 'fulfilled' ? equities.value : []),
+        ...(mfHoldings.status === 'fulfilled' ? mfHoldings.value : []),
+      ];
+
+      if (!all.length) { console.log(chalk.yellow('\n⚠ No holdings returned\n')); return; }
+
+      pm.upsertHoldings(all);
+      console.log(chalk.green(`\n✓ Synced ${all.length} holdings from Kite\n`));
+    } catch (err) {
+      console.log(chalk.red(`\n✗ Kite sync failed: ${err.message}\n`));
+    }
     return;
   }
 
-  console.log(chalk.gray('\nFetching from Kite...'));
+  if (!groww.isConfigured()) {
+    console.log(chalk.yellow('\n⚠ Groww not configured. Set GROWW_API_KEY in .env\n'));
+    console.log('Steps:');
+    console.log('  1. Create or access your Groww Trade API token');
+    console.log('  2. Add GROWW_API_KEY to .env');
+    console.log('  3. Retry broker sync from portfolio menu\n');
+    return;
+  }
+
+  console.log(chalk.gray('\nFetching from Groww...'));
   try {
-    const [equities, mfHoldings] = await Promise.allSettled([
-      kite.getHoldings(),
-      kite.getMFHoldings(),
-    ]);
+    const holdings = await groww.getHoldings();
+    if (!holdings.length) { console.log(chalk.yellow('\n⚠ No holdings returned\n')); return; }
 
-    const all = [
-      ...(equities.status    === 'fulfilled' ? equities.value    : []),
-      ...(mfHoldings.status  === 'fulfilled' ? mfHoldings.value  : []),
-    ];
-
-    if (!all.length) { console.log(chalk.yellow('\n⚠ No holdings returned\n')); return; }
-
-    pm.upsertHoldings(all);
-    console.log(chalk.green(`\n✓ Synced ${all.length} holdings from Kite\n`));
+    pm.upsertHoldings(holdings);
+    console.log(chalk.green(`\n✓ Synced ${holdings.length} holdings from Groww\n`));
   } catch (err) {
-    console.log(chalk.red(`\n✗ Kite sync failed: ${err.message}\n`));
+    console.log(chalk.red(`\n✗ Groww sync failed: ${err.message}\n`));
   }
 }
 

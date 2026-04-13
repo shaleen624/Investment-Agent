@@ -8,7 +8,7 @@ import { catchError, of, forkJoin }            from 'rxjs';
 @Component({
   selector:    'app-market',
   standalone:  true,
-  imports:     [NgClass, InrPipe],
+  imports:     [NgClass],
   templateUrl: './market.html',
   styleUrl:    './market.scss',
 })

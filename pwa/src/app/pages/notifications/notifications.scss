@@ -1,0 +1,104 @@
+.notifications-page {
+  display: grid;
+  gap: 16px;
+}
+
+.composer-card {
+  .card-body {
+    padding: 8px 0 12px;
+  }
+}
+
+.composer-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 96px;
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.log-card {
+  min-height: 260px;
+}
+
+.log-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.log-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.log-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.timestamp {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.log-message {
+  margin-top: 10px;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.log-recipient {
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.log-error {
+  margin-top: 10px;
+  color: var(--red);
+  font-size: var(--text-xs);
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+
+.log-skeleton {
+  height: 72px;
+  border-radius: 12px;
+  margin-top: 10px;
+}
+
+.test-results {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.test-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+}
+
+.test-channel {
+  text-transform: capitalize;
+}
+
+.test-status.online {
+  color: var(--green);
+}
+
+.test-status.offline {
+  color: var(--red);
+}

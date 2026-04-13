@@ -1,5 +1,5 @@
 import { Component, inject, signal, computed } from '@angular/core';
-import { NgClass, UpperCasePipe }              from '@angular/common';
+import { UpperCasePipe }                       from '@angular/common';
 import { ApiService }                          from '../../core/services/api.service';
 import type { Brief, Recommendation }          from '../../core/models';
 import { catchError, of }                       from 'rxjs';
@@ -7,7 +7,7 @@ import { catchError, of }                       from 'rxjs';
 @Component({
   selector:    'app-briefs',
   standalone:  true,
-  imports:     [NgClass, UpperCasePipe],
+  imports:     [UpperCasePipe],
   templateUrl: './briefs.html',
   styleUrl:    './briefs.scss',
 })

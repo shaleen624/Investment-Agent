@@ -1,0 +1,183 @@
+<div class="page sip-page">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">SIP Tracker</h1>
+      <div class="page-subtitle">Track plans, performance, and upcoming due dates</div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-ghost btn-sm" (click)="triggerReminders()">Run reminders</button>
+      <button class="btn btn-primary btn-sm" (click)="openAdd()">+ Add SIP</button>
+    </div>
+  </header>
+
+  <section class="metrics-grid">
+    <article class="metric-card">
+      <div class="metric-label">Active Plans</div>
+      <div class="metric-value">{{ performance()?.totalPlans ?? 0 }}</div>
+    </article>
+    <article class="metric-card">
+      <div class="metric-label">Total SIP Invested</div>
+      <div class="metric-value">{{ (performance()?.totalInvested ?? 0) | inr:0 }}</div>
+    </article>
+    <article class="metric-card">
+      <div class="metric-label">Current Value</div>
+      <div class="metric-value">{{ (performance()?.totalCurrent ?? 0) | inr:0 }}</div>
+    </article>
+    <article class="metric-card">
+      <div class="metric-label">SIP P&amp;L</div>
+      <div class="metric-value" [ngClass]="totalPnlClass()">
+        {{ (performance()?.totalPnl ?? 0) >= 0 ? '+' : '' }}{{ (performance()?.totalPnl ?? 0) | inr:0 }}
+      </div>
+      <div class="metric-sub" [ngClass]="totalPnlClass()">
+        {{ (performance()?.totalPnlPercent ?? 0) >= 0 ? '+' : '' }}{{ (performance()?.totalPnlPercent ?? 0) | number:'1.1-1' }}%
+      </div>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">Upcoming reminders (7 days)</h2>
+    </div>
+    @if (loading()) {
+      <div class="skeleton" style="height: 58px"></div>
+    } @else if (!reminders().length) {
+      <div class="empty-state" style="padding: 16px">
+        <div class="empty-title">No reminders due this week</div>
+      </div>
+    } @else {
+      <ul class="simple-list">
+        @for (reminder of reminders(); track reminder.id) {
+          <li class="simple-row">
+            <div>
+              <div class="row-title">{{ reminder.fund_name }}</div>
+              <div class="row-meta">{{ reminder.next_due_date }} • {{ reminder.amount | inr:0 }}</div>
+            </div>
+            <span class="badge badge-outline">{{ dueLabel(reminder.days_until_due) }}</span>
+          </li>
+        }
+      </ul>
+    }
+  </section>
+
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">SIP Plans</h2>
+    </div>
+    @if (loading()) {
+      <div class="skeleton" style="height: 76px"></div>
+    } @else if (!plans().length) {
+      <div class="empty-state" style="padding: 20px">
+        <div class="empty-title">No SIP plans yet</div>
+        <button class="btn btn-primary btn-sm" (click)="openAdd()">Create first SIP</button>
+      </div>
+    } @else {
+      <ul class="plans-list">
+        @for (plan of plans(); track plan.id) {
+          <li class="plan-card" (click)="openEdit(plan)">
+            <div class="plan-main">
+              <div class="plan-name">{{ plan.fund_name }}</div>
+              <div class="plan-meta">
+                <span>{{ plan.frequency | uppercase }}</span>
+                <span>•</span>
+                <span>Day {{ plan.sip_day }}</span>
+                <span>•</span>
+                <span>Next {{ plan.next_due_date }}</span>
+              </div>
+            </div>
+            <div class="plan-side">
+              <div class="plan-amount">{{ plan.amount | inr:0 }}</div>
+              <button class="icon-btn" (click)="deletePlan(plan, $event)">✕</button>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  </section>
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="closeModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>{{ isEditing() ? 'Edit SIP Plan' : 'Add SIP Plan' }}</h3>
+        <button class="icon-btn" (click)="closeModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label class="form-label">Fund Name *</label>
+          <input class="input" [formControl]="form.controls.fund_name" placeholder="Axis Bluechip Fund" />
+        </div>
+        <div class="form-row two-col-form">
+          <div>
+            <label class="form-label">Linked Holding</label>
+            <select class="input" [formControl]="form.controls.holding_id">
+              <option [ngValue]="0">None</option>
+              @for (h of holdings(); track h.id) {
+                <option [ngValue]="h.id">{{ h.name }}</option>
+              }
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Folio Number</label>
+            <input class="input" [formControl]="form.controls.folio_number" placeholder="1234567/89" />
+          </div>
+        </div>
+        <div class="form-row two-col-form">
+          <div>
+            <label class="form-label">Amount *</label>
+            <input class="input" type="number" [formControl]="form.controls.amount" min="100" />
+          </div>
+          <div>
+            <label class="form-label">Frequency *</label>
+            <select class="input" [formControl]="form.controls.frequency">
+              @for (freq of frequencies; track freq) {
+                <option [value]="freq">{{ freq | uppercase }}</option>
+              }
+            </select>
+          </div>
+        </div>
+        <div class="form-row two-col-form">
+          <div>
+            <label class="form-label">SIP Day *</label>
+            <input class="input" type="number" [formControl]="form.controls.sip_day" min="1" max="31" />
+          </div>
+          <div>
+            <label class="form-label">Next Due Date *</label>
+            <input class="input" type="date" [formControl]="form.controls.next_due_date" />
+          </div>
+        </div>
+        <div class="form-row two-col-form">
+          <div>
+            <label class="form-label">Start Date</label>
+            <input class="input" type="date" [formControl]="form.controls.start_date" />
+          </div>
+          <div>
+            <label class="form-label">End Date</label>
+            <input class="input" type="date" [formControl]="form.controls.end_date" />
+          </div>
+        </div>
+        <div class="form-row two-col-form">
+          <div>
+            <label class="form-label">Reminder Days Before</label>
+            <input class="input" type="number" [formControl]="form.controls.reminder_days_before" min="0" max="15" />
+          </div>
+          <div class="checkbox-row">
+            <label>
+              <input type="checkbox" [formControl]="form.controls.auto_reminder" /> Enable reminders
+            </label>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Notes</label>
+          <textarea class="input" [formControl]="form.controls.notes" rows="3"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" (click)="closeModal()">Cancel</button>
+        <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
+          {{ saving() ? 'Saving…' : (isEditing() ? 'Update' : 'Create') }}
+        </button>
+      </div>
+    </div>
+  </div>
+}

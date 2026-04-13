@@ -117,4 +117,60 @@ r.post('/sync/:broker', async (req, res) => {
   }
 });
 
+// GET /api/portfolio/sip/plans?all=true
+r.get('/sip/plans', (req, res) => {
+  const showAll = req.query.all === 'true';
+  res.json(pm.getSipPlans(!showAll));
+});
+
+// GET /api/portfolio/sip/plans/:id
+r.get('/sip/plans/:id', (req, res) => {
+  const sip = pm.getSipPlan(parseInt(req.params.id, 10));
+  if (!sip) return res.status(404).json({ error: 'Not found' });
+  res.json(sip);
+});
+
+// POST /api/portfolio/sip/plans
+r.post('/sip/plans', (req, res) => {
+  try {
+    const id = pm.addSipPlan(req.body);
+    res.status(201).json(pm.getSipPlan(id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// PUT /api/portfolio/sip/plans/:id
+r.put('/sip/plans/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const existing = pm.getSipPlan(id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  try {
+    pm.updateSipPlan(id, req.body);
+    res.json(pm.getSipPlan(id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE /api/portfolio/sip/plans/:id
+r.delete('/sip/plans/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const existing = pm.getSipPlan(id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  pm.deactivateSipPlan(id);
+  res.json({ deleted: true });
+});
+
+// GET /api/portfolio/sip/performance
+r.get('/sip/performance', (_req, res) => {
+  res.json(pm.getSipPerformance());
+});
+
+// GET /api/portfolio/sip/reminders?days=3
+r.get('/sip/reminders', (req, res) => {
+  const days = Math.max(0, parseInt(req.query.days || '3', 10) || 3);
+  res.json(pm.getUpcomingSipReminders(days));
+});
+
 module.exports = r;

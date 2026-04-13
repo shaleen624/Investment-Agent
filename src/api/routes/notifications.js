@@ -3,6 +3,7 @@ const { Router } = require('express');
 const { all }    = require('../../db');
 const notify     = require('../../notifications');
 const pm         = require('../../portfolio/manager');
+const scheduler  = require('../../scheduler');
 
 const r = Router();
 
@@ -28,6 +29,12 @@ r.get('/log', (req, res) => {
     [limit]
   );
   res.json(rows);
+});
+
+// POST /api/notifications/sip-reminders/run
+r.post('/sip-reminders/run', async (_req, res) => {
+  const result = await scheduler.runSipReminders();
+  res.json(result);
 });
 
 // GET /api/notifications/profile

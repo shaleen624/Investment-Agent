@@ -14,6 +14,8 @@ r.get('/', (_req, res) => {
   const warnings   = validate();
   const lastMorn   = analysis.getLatestBrief('morning');
   const lastEven   = analysis.getLatestBrief('evening');
+  const sipPerformance = pm.getSipPerformance();
+  const upcomingSipReminders = pm.getUpcomingSipReminders(7);
 
   res.json({
     ok: true,
@@ -41,6 +43,13 @@ r.get('/', (_req, res) => {
     briefs: {
       lastMorning: lastMorn?.date || null,
       lastEvening: lastEven?.date || null,
+    },
+    sip: {
+      plans: sipPerformance.totalPlans,
+      totalInvested: sipPerformance.totalInvested,
+      totalCurrent: sipPerformance.totalCurrent,
+      pnlPercent: sipPerformance.totalPnlPercent,
+      upcomingReminders: upcomingSipReminders.length,
     },
   });
 });

@@ -296,5 +296,5 @@ WantedBy=multi-user.target
 - [ ] Options portfolio tracking
 - [ ] Tax P&L calculation (STCG/LTCG)
 - [ ] SIP tracking and reminders
-- [ ] Portfolio rebalancing calculator
+- [x] Portfolio rebalancing calculator
 - [ ] Multi-user support

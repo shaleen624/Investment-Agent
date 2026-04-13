@@ -38,6 +38,7 @@ async function portfolioCLI() {
       choices: [
         { name: '📋 View all holdings',          value: 'view'    },
         { name: '📊 View allocation breakdown',   value: 'alloc'   },
+        { name: '⚖️  Run rebalancing calculator', value: 'rebalance' },
         { name: '➕ Add holding manually',        value: 'add'     },
         { name: '📁 Import from file (CSV/PDF)',  value: 'import'  },
         { name: '🔄 Sync from broker (Kite)',     value: 'sync'    },
@@ -109,6 +110,11 @@ async function handlePortfolioAction(action, summary) {
       break;
     }
 
+    case 'rebalance': {
+      await runRebalancingCalculator(summary);
+      break;
+    }
+
     case 'add': {
       await addHoldingManually();
       break;
@@ -141,6 +147,105 @@ async function handlePortfolioAction(action, summary) {
       break;
     }
   }
+}
+
+async function runRebalancingCalculator(summary) {
+  if (!summary || !summary.totalCurrent) {
+    console.log(chalk.yellow('\nNo holdings available for rebalancing.\n'));
+    return;
+  }
+
+  const assetTypes = Object.keys(summary.byType || {});
+  if (!assetTypes.length) {
+    console.log(chalk.yellow('\nNo asset categories found in portfolio.\n'));
+    return;
+  }
+
+  console.log(chalk.bold('\nEnter target allocation percentages by asset type:'));
+  const allocationQuestions = assetTypes.map((type) => {
+    const current = (summary.byType[type].current / summary.totalCurrent) * 100;
+    return {
+      type: 'number',
+      name: type,
+      message: `${type} target % (current ${current.toFixed(1)}%):`,
+      default: Number(current.toFixed(1)),
+      validate: v => Number.isFinite(v) && v >= 0 || 'Must be a non-negative number',
+    };
+  });
+
+  const targetAllocation = await inquirer.prompt(allocationQuestions);
+
+  const taxConfig = await inquirer.prompt([
+    {
+      type: 'number',
+      name: 'equityStcgRate',
+      message: 'Equity STCG rate (decimal):',
+      default: 0.15,
+      validate: v => Number.isFinite(v) && v >= 0 || 'Must be a non-negative number',
+    },
+    {
+      type: 'number',
+      name: 'equityLtcgRate',
+      message: 'Equity LTCG rate (decimal):',
+      default: 0.10,
+      validate: v => Number.isFinite(v) && v >= 0 || 'Must be a non-negative number',
+    },
+    {
+      type: 'number',
+      name: 'equityLtcgExemption',
+      message: 'Equity LTCG exemption amount:',
+      default: 125000,
+      validate: v => Number.isFinite(v) && v >= 0 || 'Must be a non-negative number',
+    },
+    {
+      type: 'number',
+      name: 'otherStcgRate',
+      message: 'Other assets STCG rate (decimal):',
+      default: 0.30,
+      validate: v => Number.isFinite(v) && v >= 0 || 'Must be a non-negative number',
+    },
+    {
+      type: 'number',
+      name: 'otherLtcgRate',
+      message: 'Other assets LTCG rate (decimal):',
+      default: 0.20,
+      validate: v => Number.isFinite(v) && v >= 0 || 'Must be a non-negative number',
+    },
+  ]);
+
+  const plan = pm.calculateRebalancingPlan(targetAllocation, taxConfig);
+
+  console.log(chalk.bold('\n── Rebalancing Drift ──'));
+  Object.entries(plan.driftByType).forEach(([assetType, drift]) => {
+    const sign = drift.driftPct >= 0 ? '+' : '';
+    const amountDirection = drift.amountToTrade >= 0 ? 'Buy' : 'Sell';
+    console.log(
+      `  ${assetType.padEnd(15)} current ${drift.currentPct.toFixed(1).padStart(5)}% | target ${drift.targetPct.toFixed(1).padStart(5)}% | drift ${sign}${drift.driftPct.toFixed(1)}% | ${amountDirection} ₹${Math.abs(drift.amountToTrade).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+    );
+  });
+
+  if (!plan.trades.length) {
+    console.log(chalk.green('\nPortfolio is already close to target allocation.\n'));
+    return;
+  }
+
+  console.log(chalk.bold('\n── Suggested Trades ──'));
+  plan.trades.forEach((trade, idx) => {
+    const actionColor = trade.action === 'sell' ? chalk.red : chalk.green;
+    const taxLine = trade.action === 'sell'
+      ? ` | gain ₹${Math.round(trade.estimatedGain).toLocaleString('en-IN')} | tax ₹${Math.round(trade.estimatedTax).toLocaleString('en-IN')} (${(trade.taxRate * 100).toFixed(1)}% ${trade.taxType?.toUpperCase()})`
+      : '';
+
+    console.log(
+      `${String(idx + 1).padStart(2)}. ${actionColor(trade.action.toUpperCase())} ${trade.name} (${trade.assetType}) for ₹${Math.round(trade.amount).toLocaleString('en-IN')}${taxLine}`
+    );
+  });
+
+  console.log(chalk.bold('\n── Tax Impact (Estimated) ──'));
+  console.log(`  Total sells:       ₹${Math.round(plan.totals.sellAmount).toLocaleString('en-IN')}`);
+  console.log(`  Total buys:        ₹${Math.round(plan.totals.buyAmount).toLocaleString('en-IN')}`);
+  console.log(`  Net capital gains: ₹${Math.round(plan.totals.netCapitalGains).toLocaleString('en-IN')}`);
+  console.log(`  Estimated tax:     ${chalk.yellow('₹' + Math.round(plan.totals.estimatedTax).toLocaleString('en-IN'))}\n`);
 }
 
 async function addHoldingManually() {

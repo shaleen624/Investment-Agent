@@ -33,6 +33,21 @@ r.get('/holdings', (_req, res) => {
   res.json(holdings);
 });
 
+// POST /api/portfolio/rebalance
+r.post('/rebalance', (req, res) => {
+  try {
+    const { targetAllocation, taxConfig } = req.body || {};
+    if (!targetAllocation || typeof targetAllocation !== 'object') {
+      return res.status(400).json({ error: 'targetAllocation object is required' });
+    }
+
+    const plan = pm.calculateRebalancingPlan(targetAllocation, taxConfig || {});
+    res.json(plan);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // GET /api/portfolio/holdings/:id
 r.get('/holdings/:id', (req, res) => {
   const h = pm.getHolding(parseInt(req.params.id));

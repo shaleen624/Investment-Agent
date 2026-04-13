@@ -142,6 +142,27 @@ CREATE TABLE IF NOT EXISTS recommendations (
   created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ── SIP Plans ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS sip_plans (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  holding_id            INTEGER REFERENCES holdings(id) ON DELETE SET NULL,
+  fund_name             TEXT    NOT NULL,
+  folio_number          TEXT,
+  amount                REAL    NOT NULL CHECK (amount > 0),
+  frequency             TEXT    NOT NULL DEFAULT 'monthly'
+                            CHECK (frequency IN ('weekly','monthly','quarterly')),
+  sip_day               INTEGER NOT NULL CHECK (sip_day BETWEEN 1 AND 31),
+  next_due_date         TEXT    NOT NULL, -- ISO date YYYY-MM-DD
+  start_date            TEXT,
+  end_date              TEXT,
+  auto_reminder         INTEGER NOT NULL DEFAULT 1,
+  reminder_days_before  INTEGER NOT NULL DEFAULT 2,
+  is_active             INTEGER NOT NULL DEFAULT 1,
+  notes                 TEXT,
+  created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ── Notification Log ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS notification_log (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,6 +182,8 @@ CREATE INDEX IF NOT EXISTS idx_briefs_date       ON briefs(date);
 CREATE INDEX IF NOT EXISTS idx_news_published    ON news_cache(published_at);
 CREATE INDEX IF NOT EXISTS idx_recs_date         ON recommendations(date);
 CREATE INDEX IF NOT EXISTS idx_market_date       ON market_snapshots(date);
+CREATE INDEX IF NOT EXISTS idx_sip_due_date      ON sip_plans(next_due_date);
+CREATE INDEX IF NOT EXISTS idx_sip_active        ON sip_plans(is_active);
 `;
 
 module.exports = { SCHEMA };

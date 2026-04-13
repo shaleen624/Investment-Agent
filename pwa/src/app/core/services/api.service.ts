@@ -4,6 +4,7 @@ import { Observable }                    from 'rxjs';
 import type {
   AgentStatus, PortfolioSummary, Holding,
   Goal, Brief, MarketSnapshot, NewsArticle, Recommendation,
+  SipPlan, SipPerformance,
 } from '../models';
 
 @Injectable({ providedIn: 'root' })
@@ -21,8 +22,8 @@ export class ApiService {
     return this.http.get<PortfolioSummary>(`${this.base}/portfolio/summary`);
   }
   holdings(type?: string): Observable<Holding[]> {
-    const params = type ? { type } : {};
-    return this.http.get<Holding[]>(`${this.base}/portfolio/holdings`, { params });
+    const params = type ? new HttpParams().set('type', type) : undefined;
+    return this.http.get<Holding[]>(`${this.base}/portfolio/holdings`, params ? { params } : undefined);
   }
   holding(id: number): Observable<Holding> {
     return this.http.get<Holding>(`${this.base}/portfolio/holdings/${id}`);
@@ -49,6 +50,32 @@ export class ApiService {
   }
   syncBroker(broker: 'kite'|'groww'): Observable<{ synced: number }> {
     return this.http.post<any>(`${this.base}/portfolio/sync/${broker}`, {});
+  }
+
+  sipPlans(all = false): Observable<SipPlan[]> {
+    const params = all ? new HttpParams().set('all', 'true') : undefined;
+    return this.http.get<SipPlan[]>(`${this.base}/portfolio/sip/plans`, params ? { params } : undefined);
+  }
+  sipPlan(id: number): Observable<SipPlan> {
+    return this.http.get<SipPlan>(`${this.base}/portfolio/sip/plans/${id}`);
+  }
+  addSipPlan(plan: Partial<SipPlan>): Observable<SipPlan> {
+    return this.http.post<SipPlan>(`${this.base}/portfolio/sip/plans`, plan);
+  }
+  updateSipPlan(id: number, plan: Partial<SipPlan>): Observable<SipPlan> {
+    return this.http.put<SipPlan>(`${this.base}/portfolio/sip/plans/${id}`, plan);
+  }
+  deleteSipPlan(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/portfolio/sip/plans/${id}`);
+  }
+  sipPerformance(): Observable<SipPerformance> {
+    return this.http.get<SipPerformance>(`${this.base}/portfolio/sip/performance`);
+  }
+  sipReminders(days = 3): Observable<SipPlan[]> {
+    return this.http.get<SipPlan[]>(`${this.base}/portfolio/sip/reminders`, { params: { days: String(days) } });
+  }
+  runSipReminders(): Observable<{ checked: number; sent: number }> {
+    return this.http.post<{ checked: number; sent: number }>(`${this.base}/notifications/sip-reminders/run`, {});
   }
 
   // ── Goals ─────────────────────────────────────────────────────────────────

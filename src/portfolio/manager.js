@@ -161,6 +161,154 @@ function getTransactions(holdingId = null) {
   return dbAll(`SELECT * FROM transactions ORDER BY date DESC`);
 }
 
+// ── SIP Plans ──────────────────────────────────────────────────────────────────
+
+function addSipPlan(plan) {
+  return run(
+    `INSERT INTO sip_plans
+      (holding_id, fund_name, folio_number, amount, frequency, sip_day, next_due_date,
+       start_date, end_date, auto_reminder, reminder_days_before, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      plan.holding_id || null,
+      plan.fund_name,
+      plan.folio_number || null,
+      plan.amount,
+      plan.frequency || 'monthly',
+      plan.sip_day,
+      plan.next_due_date,
+      plan.start_date || null,
+      plan.end_date || null,
+      plan.auto_reminder === undefined ? 1 : (plan.auto_reminder ? 1 : 0),
+      plan.reminder_days_before ?? 2,
+      plan.notes || null,
+    ]
+  ).lastInsertRowid;
+}
+
+function updateSipPlan(id, plan) {
+  run(
+    `UPDATE sip_plans SET
+       holding_id           = COALESCE(?, holding_id),
+       fund_name            = COALESCE(?, fund_name),
+       folio_number         = COALESCE(?, folio_number),
+       amount               = COALESCE(?, amount),
+       frequency            = COALESCE(?, frequency),
+       sip_day              = COALESCE(?, sip_day),
+       next_due_date        = COALESCE(?, next_due_date),
+       start_date           = COALESCE(?, start_date),
+       end_date             = COALESCE(?, end_date),
+       auto_reminder        = COALESCE(?, auto_reminder),
+       reminder_days_before = COALESCE(?, reminder_days_before),
+       is_active            = COALESCE(?, is_active),
+       notes                = COALESCE(?, notes),
+       updated_at           = datetime('now')
+     WHERE id = ?`,
+    [
+      plan.holding_id,
+      plan.fund_name,
+      plan.folio_number,
+      plan.amount,
+      plan.frequency,
+      plan.sip_day,
+      plan.next_due_date,
+      plan.start_date,
+      plan.end_date,
+      plan.auto_reminder === undefined ? null : (plan.auto_reminder ? 1 : 0),
+      plan.reminder_days_before,
+      plan.is_active === undefined ? null : (plan.is_active ? 1 : 0),
+      plan.notes,
+      id,
+    ]
+  );
+  return id;
+}
+
+function getSipPlans(activeOnly = true) {
+  const where = activeOnly ? 'WHERE s.is_active = 1' : '';
+  return dbAll(
+    `SELECT s.*, h.name AS holding_name, h.symbol AS holding_symbol
+     FROM sip_plans s
+     LEFT JOIN holdings h ON h.id = s.holding_id
+     ${where}
+     ORDER BY s.next_due_date ASC, s.fund_name ASC`
+  );
+}
+
+function getSipPlan(id) {
+  return dbGet(
+    `SELECT s.*, h.name AS holding_name, h.symbol AS holding_symbol
+     FROM sip_plans s
+     LEFT JOIN holdings h ON h.id = s.holding_id
+     WHERE s.id = ?`,
+    [id]
+  );
+}
+
+function deactivateSipPlan(id) {
+  run(`UPDATE sip_plans SET is_active = 0, updated_at = datetime('now') WHERE id = ?`, [id]);
+}
+
+function getUpcomingSipReminders(daysAhead = 3) {
+  return dbAll(
+    `SELECT s.*,
+            h.name AS holding_name,
+            h.symbol AS holding_symbol,
+            CAST(julianday(date(s.next_due_date)) - julianday(date('now', 'localtime')) AS INTEGER) AS days_until_due
+     FROM sip_plans s
+     LEFT JOIN holdings h ON h.id = s.holding_id
+     WHERE s.is_active = 1
+       AND s.auto_reminder = 1
+       AND date(s.next_due_date) BETWEEN date('now', 'localtime') AND date('now', 'localtime', '+' || ? || ' day')
+     ORDER BY date(s.next_due_date) ASC, s.fund_name ASC`,
+    [daysAhead]
+  );
+}
+
+function getSipPerformance() {
+  const rows = dbAll(
+    `SELECT s.id, s.fund_name, s.amount,
+            COUNT(t.id) AS installment_count,
+            COALESCE(SUM(CASE WHEN t.type = 'sip' THEN t.amount ELSE 0 END), 0) AS total_invested,
+            MAX(CASE WHEN t.type = 'sip' THEN t.date ELSE NULL END) AS last_installment_date,
+            s.holding_id, h.current_value, h.invested_amount, h.unrealized_pnl, h.pnl_percent
+     FROM sip_plans s
+     LEFT JOIN holdings h ON h.id = s.holding_id
+     LEFT JOIN transactions t ON t.holding_id = s.holding_id
+     WHERE s.is_active = 1
+     GROUP BY s.id
+     ORDER BY s.next_due_date ASC`
+  );
+
+  let totalInvested = 0;
+  let totalCurrent = 0;
+
+  const plans = rows.map((row) => {
+    const invested = row.total_invested || row.invested_amount || 0;
+    const current = row.current_value || 0;
+    totalInvested += invested;
+    totalCurrent += current;
+
+    return {
+      ...row,
+      total_invested: invested,
+      current_value: current,
+      unrealized_pnl: current - invested,
+      pnl_percent: invested > 0 ? ((current - invested) / invested) * 100 : 0,
+    };
+  });
+
+  const totalPnl = totalCurrent - totalInvested;
+  return {
+    totalPlans: plans.length,
+    totalInvested,
+    totalCurrent,
+    totalPnl,
+    totalPnlPercent: totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0,
+    plans,
+  };
+}
+
 // ── Goals ─────────────────────────────────────────────────────────────────────
 
 function upsertGoal(goal) {
@@ -360,6 +508,13 @@ module.exports = {
   deleteHolding,
   addTransaction,
   getTransactions,
+  addSipPlan,
+  updateSipPlan,
+  getSipPlans,
+  getSipPlan,
+  deactivateSipPlan,
+  getUpcomingSipReminders,
+  getSipPerformance,
   upsertGoal,
   getGoals,
   deleteGoal,

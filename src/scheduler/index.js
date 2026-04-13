@@ -17,6 +17,7 @@ const notify    = require('../notifications');
 
 let morningTask = null;
 let eveningTask = null;
+let sipReminderTask = null;
 
 // ── Cron expression builder ────────────────────────────────────────────────────
 
@@ -57,6 +58,30 @@ async function runEveningBrief() {
   }
 }
 
+async function runSipReminders() {
+  logger.info('[Scheduler] Checking SIP reminders...');
+  try {
+    const reminders = portfolio.getUpcomingSipReminders(3);
+    if (!reminders.length) {
+      logger.info('[Scheduler] No upcoming SIP reminders.');
+      return { checked: 0, sent: 0 };
+    }
+
+    let sent = 0;
+    for (const reminder of reminders) {
+      const result = await notify.sendSipReminder(reminder);
+      if (Object.values(result).some(Boolean)) sent++;
+    }
+
+    logger.info(`[Scheduler] SIP reminders processed: ${sent}/${reminders.length}`);
+    return { checked: reminders.length, sent };
+  } catch (err) {
+    logger.error(`[Scheduler] SIP reminder run failed: ${err.message}`);
+    await notify.sendAlert(`⚠️ SIP reminder run failed: ${err.message}`, 'error').catch(() => {});
+    return { checked: 0, sent: 0, error: err.message };
+  }
+}
+
 // ── Scheduler management ──────────────────────────────────────────────────────
 
 /**
@@ -85,13 +110,19 @@ function start() {
     timezone,
   });
 
-  logger.info(`[Scheduler] Started — Morning: ${morningTime}, Evening: ${eveningTime} (${timezone})`);
-  return { morningTime, eveningTime, timezone };
+  sipReminderTask = cron.schedule('0 9 * * *', runSipReminders, {
+    scheduled: true,
+    timezone,
+  });
+
+  logger.info(`[Scheduler] Started — Morning: ${morningTime}, Evening: ${eveningTime}, SIP Reminder: 09:00 (${timezone})`);
+  return { morningTime, eveningTime, timezone, sipReminderTime: '09:00' };
 }
 
 function stop() {
   if (morningTask) { morningTask.stop(); morningTask = null; }
   if (eveningTask) { eveningTask.stop(); eveningTask = null; }
+  if (sipReminderTask) { sipReminderTask.stop(); sipReminderTask = null; }
   logger.info('[Scheduler] Stopped');
 }
 
@@ -107,4 +138,4 @@ function isRunning() {
   return !!(morningTask || eveningTask);
 }
 
-module.exports = { start, stop, restart, isRunning, runMorningBrief, runEveningBrief, timeToCron };
+module.exports = { start, stop, restart, isRunning, runMorningBrief, runEveningBrief, runSipReminders, timeToCron };

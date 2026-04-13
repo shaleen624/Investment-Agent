@@ -129,6 +129,43 @@ async function testChannels() {
   return results;
 }
 
+async function sendSipReminder(reminder) {
+  const dueLabel = reminder.days_until_due === 0 ? 'today' : `in ${reminder.days_until_due} day(s)`;
+  const message = [
+    '⏰ SIP Reminder',
+    `${reminder.fund_name}`,
+    `Amount: ₹${Number(reminder.amount || 0).toLocaleString('en-IN')}`,
+    `Due date: ${reminder.next_due_date} (${dueLabel})`,
+  ].join('\n');
+
+  const result = await sendAlert(message, 'sip_reminder');
+  const succeededChannels = Object.entries(result)
+    .filter(([, ok]) => ok)
+    .map(([channel]) => channel);
+
+  for (const channel of succeededChannels) {
+    logNotification({
+      channel,
+      type: 'sip_reminder',
+      status: 'sent',
+      reference_id: reminder.id,
+    });
+  }
+
+  for (const [channel, ok] of Object.entries(result)) {
+    if (ok) continue;
+    logNotification({
+      channel,
+      type: 'sip_reminder',
+      status: 'failed',
+      reference_id: reminder.id,
+      error: 'Failed to send SIP reminder',
+    });
+  }
+
+  return result;
+}
+
 // ── Logging ───────────────────────────────────────────────────────────────────
 
 function logNotification({ channel, type, status, reference_id = null, error = null }) {
@@ -143,4 +180,4 @@ function logNotification({ channel, type, status, reference_id = null, error = n
   }
 }
 
-module.exports = { sendBriefToAll, sendAlert, testChannels, logNotification };
+module.exports = { sendBriefToAll, sendAlert, testChannels, sendSipReminder, logNotification };

@@ -71,7 +71,7 @@ async function scoreNews() {
     const prompt   = prompts.newsSentimentPrompt(unscoredArticles, symbols);
     const response = await withTimeout(
       llm.chat(prompt, { maxTokens: 1500 }),
-      15000,
+      60000,
       'News sentiment LLM call'
     );
     const scored   = llm.extractJSON(response);
@@ -344,7 +344,7 @@ Return a JSON array. Return [] if no specific recommendations found.`,
   try {
     const response = await withTimeout(
       llm.chat(extractPrompt, { maxTokens: 1500 }),
-      15000,
+      60000,
       'Recommendation extraction LLM call'
     );
     const recs     = llm.extractJSON(response);

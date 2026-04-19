@@ -228,26 +228,69 @@ async function updateAllPrices(userId = null, options = {}) {
 
   const quoteMap = new Map();
   const mfNavMap = new Map();
-  const batchable = prepared.filter((holding) =>
-    holding.effectiveSymbol &&
-    !isLikelyIsin(holding.effectiveSymbol) &&
-    !['mutual_fund', 'fd', 'nps', 'bond'].includes(holding.asset_type) &&
-    holding.effectiveExchange === 'NSE'
+
+  // ── Phase 1: NSE bulk fetch (primary for all Indian stocks) ──────────────────
+  // Fetches Nifty50 + NiftyNext50 + NiftyMidcap100 + NiftySmallcap50 in 4 API
+  // calls, covering ~200 liquid NSE stocks without touching Yahoo Finance at all.
+  const nseHoldings = prepared.filter((h) =>
+    h.effectiveSymbol &&
+    !isLikelyIsin(h.effectiveSymbol) &&
+    !['mutual_fund', 'fd', 'nps', 'bond'].includes(h.asset_type) &&
+    (!h.effectiveExchange || h.effectiveExchange === 'NSE')
   );
 
   const batchStartedAt = Date.now();
-  for (let i = 0; i < batchable.length; i += QUOTE_BATCH_SIZE) {
+  if (nseHoldings.length > 0 && !(deadline && Date.now() >= deadline)) {
+    try {
+      const nseMap = await nse.getBulkNseStocks();
+      let filled = 0;
+      for (const holding of nseHoldings) {
+        const s = nseMap.get(holding.effectiveSymbol.toUpperCase());
+        if (s?.price) {
+          quoteMap.set(`NSE:${holding.effectiveSymbol}`, {
+            symbol:        holding.effectiveSymbol,
+            exchange:      'NSE',
+            price:         s.price,
+            change:        s.change,
+            changePercent: s.changePercent,
+            prevClose:     s.prevClose,
+            name:          s.name || holding.name,
+            fetchedAt:     new Date().toISOString(),
+          });
+          filled++;
+        }
+      }
+      debug.batches.attempted++;
+      debug.batches.symbolsRequested = nseHoldings.length;
+      debug.batches.quotesReturned = filled;
+      debug.batches.completed++;
+      logger.info(`[Market] NSE bulk fetch: ${nseMap.size} index stocks → filled ${filled}/${nseHoldings.length} NSE holdings`);
+    } catch (nseErr) {
+      logger.warn(`[Market] NSE bulk fetch failed: ${nseErr.message}`);
+    }
+  }
+
+  // ── Phase 2: Yahoo batch for non-NSE stocks (US, BSE, etc.) ──────────────────
+  const nonNseBatchable = prepared.filter((holding) =>
+    holding.effectiveSymbol &&
+    !isLikelyIsin(holding.effectiveSymbol) &&
+    !['mutual_fund', 'fd', 'nps', 'bond'].includes(holding.asset_type) &&
+    holding.effectiveExchange && holding.effectiveExchange !== 'NSE' &&
+    !quoteMap.has(`${holding.effectiveExchange}:${holding.effectiveSymbol}`)
+  );
+
+  for (let i = 0; i < nonNseBatchable.length; i += QUOTE_BATCH_SIZE) {
     if (deadline && Date.now() >= deadline) {
       results.partial = true;
       break;
     }
-    const chunk = batchable.slice(i, i + QUOTE_BATCH_SIZE);
-    const symbols = chunk.map((holding) => holding.effectiveSymbol);
+    const chunk = nonNseBatchable.slice(i, i + QUOTE_BATCH_SIZE);
+    const symbols = chunk.map((h) => h.effectiveSymbol);
     debug.batches.attempted++;
     debug.batches.symbolsRequested += symbols.length;
     debug.batches.lastBatchSymbols = symbols.slice(0, 5);
     try {
-      const quotes = await yahoo.getQuotes(symbols, 'NSE');
+      const quotes = await yahoo.getQuotes(symbols, chunk[0].effectiveExchange);
       for (const holding of chunk) {
         const quote = quotes[holding.effectiveSymbol];
         if (quote?.price) {
@@ -257,15 +300,14 @@ async function updateAllPrices(userId = null, options = {}) {
       }
       debug.batches.completed++;
     } catch (err) {
-      logger.warn(`[Market] Batch Yahoo fetch failed for ${symbols.join(', ')}: ${err.message}`);
-      if (debug.batches.errors.length < 3) {
-        debug.batches.errors.push(err.message);
-      }
+      logger.warn(`[Market] Yahoo batch failed for non-NSE symbols (${symbols.join(', ')}): ${err.message}`);
+      if (debug.batches.errors.length < 3) debug.batches.errors.push(err.message);
     }
     debug.elapsedMs = Date.now() - startedAt;
   }
   debug.batches.durationMs = Date.now() - batchStartedAt;
 
+  // ── Phase 3: Individual fallback for anything still missing ──────────────────
   const fallbackCandidates = prepared.filter((holding) => {
     if (!holding.effectiveSymbol) return false;
     if (isLikelyIsin(holding.effectiveSymbol)) return false;
@@ -276,50 +318,7 @@ async function updateAllPrices(userId = null, options = {}) {
 
   const fallbackStartedAt = Date.now();
 
-  // ── NSE bulk pre-fill ────────────────────────────────────────────────────────
-  // Before doing expensive individual fallbacks, try a single NSE call that
-  // returns ALL Nifty 50 stocks at once. This can eliminate most individual
-  // calls and avoids hammering Yahoo Finance with 429-triggering requests.
-  const nseNeedsFallback = fallbackCandidates.filter(
-    (h) => !h.effectiveExchange || h.effectiveExchange === 'NSE'
-  );
-  if (nseNeedsFallback.length > 0 && !(deadline && Date.now() >= deadline)) {
-    try {
-      const nifty50Stocks = await nse.getNifty50Stocks();
-      if (nifty50Stocks.length > 0) {
-        const nseMap = new Map(nifty50Stocks.map((s) => [s.symbol.toUpperCase(), s]));
-        for (const holding of nseNeedsFallback) {
-          const sym = holding.effectiveSymbol.toUpperCase();
-          const s = nseMap.get(sym);
-          if (s?.price) {
-            quoteMap.set(`NSE:${holding.effectiveSymbol}`, {
-              symbol: holding.effectiveSymbol,
-              exchange: 'NSE',
-              price: s.price,
-              change: s.change,
-              changePercent: s.changePercent,
-              prevClose: s.prevClose,
-              name: s.name || holding.name,
-              fetchedAt: new Date().toISOString(),
-            });
-            debug.fallback.quotesReturned++;
-          }
-        }
-        logger.info(`[Market] NSE bulk pre-fill: got ${nifty50Stocks.length} stocks, filled ${debug.fallback.quotesReturned} missing quotes`);
-      }
-    } catch (nseErr) {
-      logger.debug(`[Market] NSE Nifty50 bulk pre-fill failed: ${nseErr.message}`);
-    }
-  }
-
-  // Recompute candidates after bulk NSE pre-fill
-  const remainingFallback = fallbackCandidates.filter((h) => {
-    const key = `${h.effectiveExchange}:${h.effectiveSymbol}`;
-    return !quoteMap.has(key);
-  });
-
-  // Low concurrency to avoid rate-limiting NSE with too many simultaneous requests.
-  await mapInBatches(remainingFallback, async (holding) => {
+  await mapInBatches(fallbackCandidates, async (holding) => {
     if (deadline && Date.now() >= deadline) return null;
 
     debug.fallback.attempted++;
@@ -332,19 +331,18 @@ async function updateAllPrices(userId = null, options = {}) {
       const isNse = !holding.effectiveExchange || holding.effectiveExchange === 'NSE';
 
       if (isNse) {
-        // For NSE stocks: go directly to NSE — Yahoo batch already failed/rate-limited,
-        // retrying Yahoo individually just triggers more 429 errors.
+        // NSE individual — bulk didn't cover this stock (non-index stock)
         try {
           quote = await nse.getQuote(holding.effectiveSymbol);
         } catch (nseErr) {
           logger.debug(`[Market] NSE individual failed for ${holding.effectiveSymbol}: ${nseErr.message}`);
         }
       } else {
-        // Non-NSE (US stocks, BSE, etc.): try Yahoo individual as it may work
+        // Non-NSE: Yahoo individual
         try {
           quote = await yahoo.getQuote(holding.effectiveSymbol, holding.effectiveExchange);
         } catch {
-          // nothing more to try
+          // no more sources
         }
       }
 
@@ -359,7 +357,7 @@ async function updateAllPrices(userId = null, options = {}) {
     debug.fallback.completed++;
     debug.elapsedMs = Date.now() - startedAt;
     return null;
-  }, 3); // Low concurrency: 3 simultaneous to avoid NSE bans
+  }, 3);
   debug.fallback.durationMs = Date.now() - fallbackStartedAt;
 
   const mfHoldings = prepared.filter((holding) => holding.asset_type === 'mutual_fund');

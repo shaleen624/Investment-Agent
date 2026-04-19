@@ -224,6 +224,50 @@ async function getNifty50Stocks() {
 }
 
 /**
+ * Bulk-fetch stocks from multiple NSE indices and merge into one deduplicated map.
+ * Covers Nifty50 + NiftyNext50 + NiftyMidcap100 = ~200 of the most liquid NSE stocks.
+ * Returns a Map keyed by uppercase symbol → stock quote object.
+ */
+async function getBulkNseStocks() {
+  const indices = [
+    'NIFTY%2050',
+    'NIFTY%20NEXT%2050',
+    'NIFTY%20MIDCAP%20100',
+    'NIFTY%20SMALLCAP%2050',
+  ];
+
+  const stockMap = new Map();
+  let totalFetched = 0;
+
+  for (const idx of indices) {
+    try {
+      const data = await nseGet(`equity-stockIndices?index=${idx}`);
+      for (const s of (data.data || [])) {
+        if (!s.symbol || stockMap.has(s.symbol.toUpperCase())) continue;
+        stockMap.set(s.symbol.toUpperCase(), {
+          symbol:        s.symbol,
+          name:          s.meta?.companyName || s.symbol,
+          price:         s.lastPrice,
+          change:        s.change,
+          changePercent: s.pChange,
+          open:          s.open,
+          high:          s.dayHigh,
+          low:           s.dayLow,
+          prevClose:     s.previousClose,
+          volume:        s.totalTradedVolume,
+        });
+        totalFetched++;
+      }
+    } catch (err) {
+      logger.debug(`[NSE] getBulkNseStocks: index ${decodeURIComponent(idx)} failed: ${err.message}`);
+    }
+  }
+
+  logger.debug(`[NSE] getBulkNseStocks: ${stockMap.size} unique stocks from ${indices.length} indices`);
+  return stockMap;
+}
+
+/**
  * Get sectoral index performance.
  */
 async function getSectoralIndices() {
@@ -261,4 +305,4 @@ async function getSectoralIndices() {
   return results;
 }
 
-module.exports = { getQuote, getNifty50, getNifty50Stocks, getSectoralIndices };
+module.exports = { getQuote, getNifty50, getNifty50Stocks, getBulkNseStocks, getSectoralIndices };

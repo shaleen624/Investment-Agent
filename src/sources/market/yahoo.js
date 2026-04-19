@@ -23,12 +23,22 @@ async function getYF() {
   try {
     const mod = await import('yahoo-finance2');
     const YahooFinance = mod.default;
+
+    // Suppress notices on the class/module before instantiation (static path)
+    if (typeof YahooFinance?.suppressNotices === 'function') {
+      YahooFinance.suppressNotices(['yahooSurvey', 'ripHistorical']);
+    }
+    // Also try the module export directly in case it exposes a static reference
+    if (typeof mod.suppressNotices === 'function') {
+      mod.suppressNotices(['yahooSurvey', 'ripHistorical']);
+    }
+
     // v2.14+ exports a class — instantiate it
     yf = typeof YahooFinance === 'function' && YahooFinance.prototype?.quote
       ? new YahooFinance()
       : YahooFinance;
 
-    // Suppress the survey-invitation console noise from yahoo-finance2
+    // Suppress on the instance as well
     if (typeof yf.suppressNotices === 'function') {
       yf.suppressNotices(['yahooSurvey', 'ripHistorical']);
     }
@@ -183,7 +193,7 @@ async function getQuotes(symbols, exchange = 'NSE') {
     });
     return map;
   } catch (err) {
-    logger.warn(`[Yahoo] no-crumb getQuotes failed, falling back: ${err.message}`);
+    logger.debug(`[Yahoo] no-crumb getQuotes failed, falling back: ${err.message}`);
   }
 
   // Fallback path via yahoo-finance2 (with crumb). Retry on 429.
@@ -203,7 +213,7 @@ async function getQuotes(symbols, exchange = 'NSE') {
     }
     return map;
   } catch (err) {
-    logger.error(`[Yahoo] getQuotes failed: ${err.message}`);
+    logger.debug(`[Yahoo] getQuotes failed: ${err.message}`);
     throw err;
   }
 }
@@ -302,9 +312,9 @@ async function getMarketIndices() {
       logger.debug('[Yahoo] getMarketIndices: no-crumb succeeded');
       return snapshot;
     }
-    logger.warn('[Yahoo] getMarketIndices: no-crumb returned empty prices, falling back');
+    logger.debug('[Yahoo] getMarketIndices: no-crumb returned empty prices, falling back');
   } catch (err) {
-    logger.warn(`[Yahoo] no-crumb getMarketIndices failed: ${err.message}`);
+    logger.debug(`[Yahoo] no-crumb getMarketIndices failed: ${err.message}`);
   }
 
   // ── Attempt 2: yahoo-finance2 with crumb (handles auth automatically) ────
